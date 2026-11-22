@@ -115,7 +115,7 @@ export function diversifyRankedCandidates(candidates, limit = 12) {
       const role = candidate.candidate?.user?.role || candidate.role || "UNKNOWN";
       const adjustment = Math.min(0.12, (departmentCounts.get(department) || 0) * 0.055) +
         Math.min(0.08, (roleCounts.get(role) || 0) * 0.025);
-      const adjusted = candidate.matchScore - adjustment;
+      const adjusted = (candidate.rankingScore ?? candidate.matchScore) - adjustment;
       if (adjusted > bestAdjusted) {
         bestAdjusted = adjusted;
         bestIndex = index;
@@ -125,7 +125,7 @@ export function diversifyRankedCandidates(candidates, limit = 12) {
     const [candidate] = remaining.splice(bestIndex, 1);
     const department = candidate.candidate?.department || candidate.department || "Unassigned";
     const role = candidate.candidate?.user?.role || candidate.role || "UNKNOWN";
-    const adjustment = Math.max(0, candidate.matchScore - bestAdjusted);
+    const adjustment = Math.max(0, (candidate.rankingScore ?? candidate.matchScore) - bestAdjusted);
     selected.push({ ...candidate, diversityAdjustment: adjustment });
     departmentCounts.set(department, (departmentCounts.get(department) || 0) + 1);
     roleCounts.set(role, (roleCounts.get(role) || 0) + 1);

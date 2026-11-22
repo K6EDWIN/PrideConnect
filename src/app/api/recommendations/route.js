@@ -14,11 +14,16 @@ import { getAdaptivePredictions } from "@/lib/hosted-ml";
 import { diversifyRankedCandidates, explainProfileMatch } from "@/lib/profile-vectors";
 import { getMlUserKey } from "@/lib/ml-sync-auth";
 import { isEligibleMentorshipMatch } from "@/lib/matching-eligibility";
+import { withNcfRankingSignal } from "@/lib/ncf-ranking";
 import { randomInt } from "node:crypto";
+import { Prisma } from "@prisma/client";
+
+const CANDIDATE_PREFETCH_SIZE = 750;
+const INTERACTION_HISTORY_LIMIT = 5000;
 
 // GET /api/recommendations
 // Fits a small acceptance model from resolved, feature-snapshotted live
-// requests. The model gradually takes over ranking as labeled outcomes grow.
+// requests. Its prediction is displayed separately and does not rank matches.
 export async function GET() {
   const session = await getServerSession(authOptions);
 
@@ -50,54 +55,76 @@ export async function GET() {
       eventType: "DISMISS",
       createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
     },
+    orderBy: { createdAt: "desc" },
+    take: 2000,
     select: { recommendation: { select: { matchedUserId: true } } },
   });
   const dismissedUserIds = [...new Set(dismissedEvents.map((event) => event.recommendation.matchedUserId))];
-  const candidateSignals = [
-    ownerAttrs.skillIds.length ? { skills: { some: { skillId: { in: ownerAttrs.skillIds } } } } : null,
-    ownerAttrs.interestIds.length ? { interests: { some: { interestId: { in: ownerAttrs.interestIds } } } } : null,
-    ownerProfile.department ? { department: ownerProfile.department } : null,
-  ].filter(Boolean);
-  const roleEligibility = ownerProfile.mentorshipRole === "MENTOR"
-    ? [{ mentorshipRole: { in: ["MENTEE", "BOTH"] } }, { mentorshipRole: null }]
+  const signalClauses = [];
+  if (ownerAttrs.skillIds.length) signalClauses.push(Prisma.sql`EXISTS (
+    SELECT 1 FROM "ProfileSkill" ps WHERE ps."profileId" = p.id AND ps."skillId" IN (${Prisma.join(ownerAttrs.skillIds)})
+  )`);
+  if (ownerAttrs.interestIds.length) signalClauses.push(Prisma.sql`EXISTS (
+    SELECT 1 FROM "ProfileInterest" pi WHERE pi."profileId" = p.id AND pi."interestId" IN (${Prisma.join(ownerAttrs.interestIds)})
+  )`);
+  if (ownerProfile.department) signalClauses.push(Prisma.sql`p.department = ${ownerProfile.department}`);
+  const signalClause = signalClauses.length ? Prisma.sql`AND (${Prisma.join(signalClauses, " OR ")})` : Prisma.empty;
+  const roleClause = ownerProfile.mentorshipRole === "MENTOR"
+    ? Prisma.sql`AND (p."mentorshipRole" IN ('MENTEE', 'BOTH') OR p."mentorshipRole" IS NULL)`
     : ownerProfile.mentorshipRole === "MENTEE"
-      ? [{ mentorshipRole: { in: ["MENTOR", "BOTH"] } }, { mentorshipRole: null }]
-      : null;
-  const candidates = await prisma.profile.findMany({
-    where: {
-      isPublic: true,
-      userId: { not: session.user.id, notIn: dismissedUserIds },
-      user: { isVerified: true, isSuspended: false, isDeleted: false, isDemo: false },
-      ...(candidateSignals.length ? { OR: candidateSignals } : {}),
-      ...(roleEligibility ? { AND: [{ OR: roleEligibility }] } : {}),
-    },
-    orderBy: { userId: "asc" },
-    take: 250,
+      ? Prisma.sql`AND (p."mentorshipRole" IN ('MENTOR', 'BOTH') OR p."mentorshipRole" IS NULL)`
+      : Prisma.empty;
+  const dismissedClause = dismissedUserIds.length
+    ? Prisma.sql`AND p."userId" NOT IN (${Prisma.join(dismissedUserIds)})`
+    : Prisma.empty;
+  const skillOverlap = ownerAttrs.skillIds.length ? Prisma.sql`(
+    SELECT COUNT(*) FROM "ProfileSkill" ps WHERE ps."profileId" = p.id AND ps."skillId" IN (${Prisma.join(ownerAttrs.skillIds)})
+  )` : Prisma.sql`0`;
+  const interestOverlap = ownerAttrs.interestIds.length ? Prisma.sql`(
+    SELECT COUNT(*) FROM "ProfileInterest" pi WHERE pi."profileId" = p.id AND pi."interestId" IN (${Prisma.join(ownerAttrs.interestIds)})
+  )` : Prisma.sql`0`;
+  const rotationKey = `${session.user.id}:${new Date().toISOString().slice(0, 10)}`;
+  const candidateIds = await prisma.$queryRaw(Prisma.sql`
+    SELECT p."userId" AS "userId"
+    FROM "Profile" p JOIN "User" u ON u.id = p."userId"
+    WHERE p."isPublic" = true AND p."userId" <> ${session.user.id}
+      AND u."isVerified" = true AND u."isSuspended" = false AND u."isDeleted" = false AND u."isDemo" = false
+      ${dismissedClause} ${roleClause} ${signalClause}
+    ORDER BY (${skillOverlap} * 3 + ${interestOverlap} * 2 + CASE WHEN p.department = ${ownerProfile.department || null} THEN 1 ELSE 0 END) DESC,
+      md5(p."userId" || ${rotationKey}) ASC
+    LIMIT ${CANDIDATE_PREFETCH_SIZE}
+  `);
+  const candidates = candidateIds.length ? await prisma.profile.findMany({
+    where: { userId: { in: candidateIds.map(({ userId }) => userId) } },
     include: {
       user: { select: { id: true, role: true } },
       skills: { include: { skill: true } },
       interests: { include: { interest: true } },
       mentorshipTopics: { include: { skill: { select: { id: true, name: true } } } },
     },
-  });
+  }) : [];
   const eligibleCandidates = candidates.filter((candidate) => isEligibleMentorshipMatch(ownerProfile, candidate));
 
   const [acceptedMentorships, acceptedConnections, resolvedMentorships, resolvedConnections] = await Promise.all([
     prisma.mentorshipRequest.findMany({
       where: { status: "ACCEPTED", sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
       select: { senderId: true, receiverId: true },
+      orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
     }),
     prisma.connectionRequest.findMany({
       where: { status: "ACCEPTED", sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
       select: { senderId: true, receiverId: true },
+      orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
     }),
     prisma.mentorshipRequest.findMany({
       where: { status: { in: ["ACCEPTED", "DECLINED"] }, sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
       select: { status: true, modelFeatures: true },
+      orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
     }),
     prisma.connectionRequest.findMany({
       where: { status: { in: ["ACCEPTED", "DECLINED"] }, sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
       select: { status: true, modelFeatures: true },
+      orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
     }),
   ]);
 
@@ -117,6 +144,8 @@ export async function GET() {
       user: { isDemo: false, isDeleted: false },
       recommendation: { is: { owner: { isDemo: false, isDeleted: false }, matchedUser: { isDemo: false, isDeleted: false } } },
     },
+    orderBy: { createdAt: "desc" },
+    take: 1000,
     select: { rating: true, modelFeatures: true, recommendation: { select: { matchedUserId: true } } },
   });
   const relevanceModel = trainRelevanceModel(feedbackRows);
@@ -189,9 +218,6 @@ export async function GET() {
     item.mlAcceptanceProbability = hostedPredictions.predictions[index];
     item.mlConfidence = hostedPredictions.model.confidence;
     item.ncfProbability = ncfPredictions[index];
-    // Keep NCF in shadow: compute and expose predictions for monitoring, but
-    // do not let them affect member rankings until repeated holdouts support it.
-    item.ncfInfluence = 0;
     item.mlRelevanceProbability = relevancePredictions[index];
     item.relevanceInfluence = item.mlRelevanceProbability === null
       ? 0
@@ -202,10 +228,11 @@ export async function GET() {
       ? item.baselineScore
       : item.baselineScore * (1 - item.relevanceInfluence) +
         item.mlRelevanceProbability * item.relevanceInfluence;
+    Object.assign(item, withNcfRankingSignal(item, item.ncfProbability));
   });
 
   const diversifiedAll = diversifyRankedCandidates(
-    [...scored].sort((a, b) => b.matchScore - a.matchScore),
+    [...scored].sort((a, b) => b.rankingScore - a.rankingScore),
     scored.length
   );
   let rankedCandidates = diversifiedAll.slice(0, 12).map((item) => ({ ...item, exploration: false, selectionProbability: 1 }));
@@ -269,7 +296,7 @@ export async function GET() {
       recommendationId: recommendationIds.get(item.candidate.user.id),
       eventType: "SERVED",
       rank: index + 1,
-      policy: item.exploration ? "RANDOM_QUALIFIED_LAST_SLOT_V1" : "DETERMINISTIC_PROFILE_RELEVANCE_V3",
+      policy: item.exploration ? "RANDOM_QUALIFIED_LAST_SLOT_V1" : item.ncfInfluence > 0 ? "NCF_ASSISTED_PROFILE_RANKING_V1" : "DETERMINISTIC_PROFILE_RELEVANCE_V3",
       selectionProbability: item.selectionProbability,
       scores: {
         content: item.contentScore,
@@ -279,7 +306,8 @@ export async function GET() {
         acceptanceProbability: item.mlAcceptanceProbability,
         relevanceProbability: item.mlRelevanceProbability,
         ncfAcceptanceProbability: item.ncfProbability,
-        rankingScore: item.matchScore,
+        rankingScore: item.rankingScore,
+        ncfRankingInfluence: item.ncfInfluence,
       },
     })),
   });
@@ -295,7 +323,9 @@ export async function GET() {
       bio: item.candidate.bio,
       mentorshipRole: item.candidate.mentorshipRole,
       matchPercent: Math.round(item.matchScore * 100),
-      rankAdjustedPercent: Math.round((item.matchScore - item.diversityAdjustment) * 100),
+      profileRelevancePercent: Math.round(item.matchScore * 100),
+      rankAdjustedPercent: Math.round((item.rankingScore - item.diversityAdjustment) * 100),
+      rankingPercent: Math.round((item.rankingScore - item.diversityAdjustment) * 100),
       contentScore: Math.round(item.contentScore * 100),
       semanticScore: Math.round(item.semanticScore * 100),
       collaborativeScore: Math.round(item.collaborativeScore * 100),
@@ -350,7 +380,9 @@ export async function GET() {
         semanticProfileSignal: true,
         diversityReranking: true,
         acceptanceUsedForRanking: false,
-        ncfStatus: "SHADOW",
+        ncfStatus: ncfOutput.active ? "ASSISTED_RANKING" : "WAITING_FOR_ACTIVE_ARTIFACT",
+        ncfRankingInfluence: rankedCandidates.some((item) => item.ncfInfluence > 0) ? 10 : 0,
+        relevanceRankingInfluence: Math.round(Math.max(0, ...rankedCandidates.map((item) => item.relevanceInfluence || 0)) * 100),
         explorationEnabled,
         explorationHistory: { servedImpressions: servedHistoryCount, usefulFeedback: usefulFeedbackCount },
         version: "profile-feedback-ranker-v4",

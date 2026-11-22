@@ -42,7 +42,7 @@ The system uses different signals for different questions; an acceptance estimat
 | Collaborative filtering | Patterns in accepted mentorship and connection requests | Adds network context when members have enough shared history. |
 | Acceptance model | Outcomes of resolved requests and feature snapshots recorded when requests were sent | Estimates the chance that a similar request will be accepted. |
 | Relevance model | Members’ explicit useful / not useful match ratings | Learns a separate signal for match relevance when enough ratings exist. |
-| Neural Collaborative Filtering (NCF) | Eligible historical interactions and pseudonymous member IDs, trained in Colab | Shadow evaluation only; it currently has no influence on live ranking. |
+| Neural Collaborative Filtering (NCF) | Eligible historical interactions and pseudonymous member IDs, trained in Colab | Quality-gated; contributes up to 10% when a pair estimate is available. |
 
 The application records recommendation impressions and member actions to support later evaluation. It does not treat synthetic demo data or shared-skills proxy labels as evidence of real-world recommendation quality. See [the model report](docs/ML_MODEL.md) for formulas, thresholds, and current limitations.
 
@@ -50,7 +50,7 @@ The application records recommendation impressions and member actions to support
 
 The Admin Console reports ranking diagnostics, chronological holdouts, member-judged results when enough feedback exists, and exposure summaries. Some benchmark metrics use a designed proxy based on profile overlap or existing connections; these are not independent member judgments. Holdout results are internal checks, not proof of usefulness, fairness, or improved outcomes.
 
-The project still needs more real, consented usage data and repeated time-based comparisons before stronger claims can be made. NCF remains in shadow until it consistently outperforms simpler baselines. The older notebook at `ml/train_recommender.ipynb` uses fabricated data and is a separate research experiment; its results are not used by the live site.
+The project still needs more real, consented usage data and repeated time-based comparisons before stronger claims can be made. A quality-gated NCF artifact contributes up to 10% of the ranking score when it can predict a member pair; it falls back to profile/relevance ranking when it cannot. This limited influence is not evidence that NCF consistently outperforms simpler baselines. The older notebook at `ml/train_recommender.ipynb` uses fabricated data and is a separate research experiment; its results are not used by the live site.
 
 ## Run locally
 
@@ -95,7 +95,7 @@ Optional integrations:
 
 Never commit `.env` or real secrets. For production, configure secrets in the hosting provider and set `APP_URL` to the public HTTPS site URL. Event banners require a public Vercel Blob store and its read/write token; events can still be posted without a banner.
 
-Frequent Flyer registration encrypts Asante Rewards and recent-flight details for restricted administrator review. Generate `FREQUENT_FLYER_VERIFICATION_KEY` with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` and set the same private value locally and in the hosting environment. No airline verification service is connected, so an administrator must compare submissions with records they are authorized to access. Password reset uses the configured Gmail email service and one-time links that expire after 30 minutes.
+Frequent Flyer registration encrypts Asante Rewards and recent-flight details for restricted administrator review. Evidence is opened on demand, access is audited, and its encrypted payload is cleared when the review is completed; the review outcome and note remain. Apply the `20261123100000_minimize_frequent_flyer_evidence` migration before deploying this change. Generate `FREQUENT_FLYER_VERIFICATION_KEY` with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` and set the same private value locally and in the hosting environment. No airline verification service is connected, so an administrator must compare submissions with records they are authorized to access. Password reset uses the configured Gmail email service and one-time links that expire after 30 minutes.
 
 ### 3. Create the local database schema
 
@@ -138,7 +138,7 @@ The live-data workflow is in [`ml/colab_live_recommender.ipynb`](ml/colab_live_r
 
 Configure `ML_COLAB_SYNC_TOKEN` on the application and as a Colab Secret named `ML_COLAB_SYNC_TOKEN`. Set `PRIDECONNECT_APP_URL` in Colab to the deployed site URL. Keep `ML_COLAB_USER_SALT` stable on the app server; do not put it in the notebook or share it. Apply relevant database changes before using the live-data workflow.
 
-Colab is used for training and publishing, not as a continuously running inference server. Once published, artifacts are stored in PostgreSQL. NCF acceptance predictions remain in shadow with zero ranking influence. Full instructions and methodological details are in [`ml/README.md`](ml/README.md) and [`docs/ML_MODEL.md`](docs/ML_MODEL.md).
+Colab is used for training and publishing, not as a continuously running inference server. Once published, artifacts are stored in PostgreSQL. Quality-gated NCF acceptance predictions can supply up to 10% of the ranking score when a member-pair prediction is available. Full instructions and methodological details are in [`ml/README.md`](ml/README.md) and [`docs/ML_MODEL.md`](docs/ML_MODEL.md).
 
 ## Architecture
 

@@ -4,8 +4,28 @@ import {
   computeContentScore,
   sharedAttributes,
 } from "@/lib/recommendation";
+import { scoreCandidate } from "@/lib/adaptive-recommender";
 
 describe("Content-Based Filtering (recommendation.js)", () => {
+  it("keeps acceptance likelihood separate from the profile ranking score", () => {
+    const result = scoreCandidate({
+      owner: { userId: "owner", mentorshipRole: "MENTOR", mentorshipTopics: [] },
+      candidate: {
+        user: { id: "candidate" }, mentorshipRole: "MENTEE", mentorshipTopics: [],
+        department: "Flight Operations", skills: [], interests: [],
+      },
+      ownerAttrs: { skillIds: ["flight-ops"], interestIds: [] },
+      candidateAttrs: { skillIds: ["flight-ops"], interestIds: [] },
+      connectionsByUser: new Map(),
+      model: { active: true, confidence: 1, predict: () => 0.99 },
+      totalAcceptedInteractions: 0,
+    });
+
+    expect(result.mlAcceptanceProbability).toBe(0.99);
+    expect(result.matchScore).toBe(result.baselineScore);
+    expect(result.matchScore).not.toBe(result.mlAcceptanceProbability);
+  });
+
   describe("jaccard()", () => {
     it("returns 0 when both sets are empty", () => {
       const setA = new Set();

@@ -1,11 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { getProviders, signIn } from "next-auth/react";
 import { KQLogo, Button } from "@/components/KQBrand";
-import { Icon, GoogleIcon } from "@/components/KQIcons";
+import { Icon } from "@/components/KQIcons";
 import { ViewModeToggle } from "@/components/ViewMode";
 import { readApiResponse } from "@/lib/read-api-response";
 
@@ -43,7 +42,6 @@ const PERSONAS = [
 function RegisterForm() {
   const searchParams = useSearchParams();
   const frequentFlyerEntry = searchParams.get("role") === "FREQUENT_FLYER";
-  const [googleAvailable, setGoogleAvailable] = useState(false);
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -68,14 +66,6 @@ function RegisterForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-    getProviders()
-      .then((providers) => { if (isMounted) setGoogleAvailable(Boolean(providers?.google)); })
-      .catch(() => { if (isMounted) setGoogleAvailable(false); });
-    return () => { isMounted = false; };
-  }, []);
 
   const selectedPersona = PERSONAS.find((p) => p.id === form.role) || null;
 
@@ -259,28 +249,9 @@ function RegisterForm() {
                     </div>
                   </div>
 
-                  {googleAvailable && form.role !== "FREQUENT_FLYER" && (
-                    <>
-                      <div className="mt-5">
-                        <button
-                          type="button"
-                          onClick={() => signIn("google", { callbackUrl: "/recommendations" })}
-                          className="w-full py-3 px-4 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-sm font-semibold text-slate-700 flex items-center justify-center gap-3 transition cursor-pointer shadow-xs"
-                        >
-                          <GoogleIcon size={18} />
-                          <span>Sign up with Google</span>
-                        </button>
-                      </div>
-
-                      <div className="flex items-center gap-3 my-5">
-                        <div className="flex-1 h-px bg-slate-200" />
-                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                          or register with email
-                        </span>
-                        <div className="flex-1 h-px bg-slate-200" />
-                      </div>
-                    </>
-                  )}
+                  <p className="mt-4 text-center text-xs text-slate-500">
+                    Register and verify your email first. Google sign-in, when enabled, is available for existing verified accounts.
+                  </p>
 
                   {error && (
                     <div className="p-3 bg-red-50 border border-red-200 text-[#c8102e] text-xs rounded-lg mb-4 flex items-center gap-2">

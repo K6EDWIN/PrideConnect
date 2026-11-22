@@ -34,6 +34,7 @@ vi.mock("@/lib/prisma", () => ({
       count: vi.fn(),
       createMany: vi.fn(),
     },
+    $queryRaw: vi.fn(),
     $transaction: vi.fn(),
   },
 }));
@@ -64,6 +65,7 @@ describe("GET /api/recommendations API Endpoint", () => {
     prisma.recommendationEvent.findMany.mockResolvedValue([]);
     prisma.recommendationEvent.count.mockResolvedValue(0);
     prisma.recommendationEvent.createMany.mockResolvedValue({ count: 0 });
+    prisma.$queryRaw.mockResolvedValue([]);
   });
 
   it("returns 401 if the user is unauthenticated", async () => {
@@ -123,6 +125,7 @@ describe("GET /api/recommendations API Endpoint", () => {
         interests: [{ interestId: "i99", interest: { name: "Aviation Tech" } }],
       },
     ];
+    prisma.$queryRaw.mockResolvedValueOnce([{ userId: "user-jane" }, { userId: "user-junior" }]);
     prisma.profile.findMany.mockResolvedValueOnce(mockCandidates);
 
     // Mock interaction history
@@ -142,6 +145,7 @@ describe("GET /api/recommendations API Endpoint", () => {
     // Highest match should be ranked first
     expect(data.recommendations[0].fullName).toBe("Captain Jane");
     expect(data.recommendations[0].matchPercent).toBeGreaterThan(data.recommendations[1].matchPercent);
+    expect(data.recommendations[0].rankingPercent).toBeDefined();
     expect(data.recommendations[0].sharedSkills).toContain("Flight Operations");
     expect(data.recommendations[0].sharedInterests).toContain("Mentorship");
 

@@ -291,9 +291,9 @@ export function scoreCandidate({
     modelFeatures.mentorshipTopicFit * topicWeight;
   const baselineScore = computeHybridScore(profileScore, collaborativeScore, baselineWeights);
   const mlAcceptanceProbability = model.active ? model.predict(modelFeatures) : null;
-  const matchScore = model.active
-    ? baselineScore * (1 - model.confidence) + mlAcceptanceProbability * model.confidence
-    : baselineScore;
+  // Acceptance is a request-response prediction, not a measure of whether
+  // two profiles are a useful match. Keep it descriptive and out of ranking.
+  const matchScore = baselineScore;
 
   return {
     contentScore,

@@ -23,6 +23,8 @@ export default function FrequentFlyerReviewsPage() {
   const [error, setError] = useState("");
   const [savingId, setSavingId] = useState("");
   const [notice, setNotice] = useState("");
+  const [evidenceById, setEvidenceById] = useState({});
+  const [openingId, setOpeningId] = useState("");
 
   const loadReviews = useCallback(async () => {
     setError("");
@@ -62,6 +64,7 @@ export default function FrequentFlyerReviewsPage() {
       });
       const data = await readApiResponse(response, "Could not save the membership review");
       setReviews((current) => current.filter((item) => item.id !== review.id));
+      setEvidenceById((current) => { const next = { ...current }; delete next[review.id]; return next; });
       setNotice(data.notificationSent
         ? "Review saved and the member was emailed."
         : "Review saved. The member email could not be sent; check email service settings.");
@@ -69,6 +72,21 @@ export default function FrequentFlyerReviewsPage() {
       setError(reviewError.message || "Could not save the membership review.");
     } finally {
       setSavingId("");
+    }
+  }
+
+  async function openEvidence(review) {
+    if (evidenceById[review.id]) return;
+    setOpeningId(review.id);
+    setError("");
+    try {
+      const response = await fetch(`/api/admin/frequent-flyers/${encodeURIComponent(review.id)}`, { cache: "no-store" });
+      const data = await readApiResponse(response, "Could not open private review evidence");
+      setEvidenceById((current) => ({ ...current, [review.id]: data.evidence }));
+    } catch (openError) {
+      setError(openError.message || "Could not open private review evidence.");
+    } finally {
+      setOpeningId("");
     }
   }
 
@@ -101,7 +119,7 @@ export default function FrequentFlyerReviewsPage() {
           <div className="space-y-4">
             <p className="text-sm font-semibold text-slate-700">{reviews.length} pending {reviews.length === 1 ? "review" : "reviews"}</p>
             {reviews.map((review) => {
-              const evidence = review.evidence;
+              const evidence = evidenceById[review.id];
               const pending = savingId === review.id;
               return (
                 <article key={review.id} className="card space-y-4 p-5 sm:p-6">
@@ -114,12 +132,19 @@ export default function FrequentFlyerReviewsPage() {
                     <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">Pending review</span>
                   </div>
 
-                  <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                    <div className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Asante Rewards number</dt><dd className="mt-1 break-all font-mono font-semibold text-slate-900">{evidence.asanteRewardsNumber}</dd></div>
-                    <div className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last flight</dt><dd className="mt-1 font-semibold text-slate-900">{evidence.lastFlightAirline} · {evidence.lastFlightNumber}</dd></div>
-                    <div className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Route</dt><dd className="mt-1 font-semibold text-slate-900">{evidence.origin} → {evidence.destination}</dd></div>
-                    <div className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Approximate travel date</dt><dd className="mt-1 font-semibold text-slate-900">{formatDate(evidence.lastFlightDate)}</dd></div>
-                  </dl>
+                  {evidence ? (
+                    <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                      <div className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Asante Rewards number</dt><dd className="mt-1 break-all font-mono font-semibold text-slate-900">{evidence.asanteRewardsNumber}</dd></div>
+                      <div className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last flight</dt><dd className="mt-1 font-semibold text-slate-900">{evidence.lastFlightAirline} · {evidence.lastFlightNumber}</dd></div>
+                      <div className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Route</dt><dd className="mt-1 font-semibold text-slate-900">{evidence.origin} → {evidence.destination}</dd></div>
+                      <div className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Approximate travel date</dt><dd className="mt-1 font-semibold text-slate-900">{formatDate(evidence.lastFlightDate)}</dd></div>
+                    </dl>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="mb-3 text-sm text-slate-600">Private flight and membership evidence is encrypted and opened only when needed for a review.</p>
+                      <Button variant="secondary" disabled={Boolean(openingId)} onClick={() => openEvidence(review)}>{openingId === review.id ? "Opening evidence…" : "Open private evidence"}</Button>
+                    </div>
+                  )}
 
                   <div>
                     <label htmlFor={`review-note-${review.id}`} className="mb-1 block text-xs font-semibold text-slate-700">Private review note {" "}<span className="font-normal text-slate-500">(required if details cannot be confirmed)</span></label>
