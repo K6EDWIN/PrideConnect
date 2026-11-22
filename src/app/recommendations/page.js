@@ -39,6 +39,7 @@ export default function RecommendationsPage() {
   const [meta, setMeta] = useState({
     totalInteractions: 0,
     model: { active: false, trainingExamples: 0, confidence: 0 },
+    ranking: { ncfRankingInfluence: 0, relevanceRankingInfluence: 0 },
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -120,7 +121,7 @@ export default function RecommendationsPage() {
           item.skills.some((s) => s.toLowerCase().includes(searchQuery.toLowerCase())));
 
       const matchesRole = roleFilter === "ALL" || item.role === roleFilter;
-      const matchesScore = item.matchPercent >= minScore;
+      const matchesScore = (item.rankingPercent ?? item.matchPercent) >= minScore;
       const matchesMentorship =
         mentorshipFilter === "ALL" || item.mentorshipRole === mentorshipFilter;
 
@@ -311,7 +312,7 @@ export default function RecommendationsPage() {
                 <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">High Affinity</span>
                 <div className="flex items-baseline gap-1.5 mt-0.5">
                   <span className="text-xl sm:text-2xl font-bold text-emerald-400">
-                    {recommendations.filter((r) => r.matchPercent >= 75).length}
+                    {recommendations.filter((r) => (r.rankingPercent ?? r.matchPercent) >= 75).length}
                   </span>
                   <span className="text-xs text-slate-400">Top Matches</span>
                 </div>
@@ -326,10 +327,10 @@ export default function RecommendationsPage() {
               </div>
 
               <div className="flex flex-col">
-                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Model Influence</span>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
-                  <span className="text-xl sm:text-2xl font-bold text-amber-400">{meta.model?.confidence || 0}%</span>
-                  <span className="text-xs text-slate-400 font-mono">Weight</span>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Learned ranking inputs</span>
+                <div className="mt-0.5 flex flex-col">
+                  <span className="text-sm font-bold text-amber-300">Member relevance {meta.ranking?.relevanceRankingInfluence ?? 0}%</span>
+                  <span className="text-xs text-slate-400">NCF up to {meta.ranking?.ncfRankingInfluence ?? 0}% · acceptance stays separate</span>
                 </div>
               </div>
             </div>
@@ -434,7 +435,7 @@ export default function RecommendationsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {filteredMatches.map((item) => {
               const roleDisplay = ROLE_LABELS[item.role] || item.role;
-              const isHighMatch = item.matchPercent >= 80;
+              const rankingPercent = item.rankingPercent ?? item.matchPercent;
 
               return (
                 <article
@@ -454,14 +455,14 @@ export default function RecommendationsPage() {
                       <div className="flex flex-col items-end gap-1 bg-emerald-50/80 border border-emerald-200/70 px-3 py-1.5 rounded-xl shadow-2xs">
                         <div className="flex items-baseline gap-1">
                           <span className="text-base sm:text-lg font-bold text-emerald-800 font-mono">
-                            {item.matchPercent === 0 ? "New" : `${item.matchPercent}%`}
+                            {rankingPercent === 0 ? "New" : `${rankingPercent}%`}
                           </span>
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Match score</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Ranking score</span>
                         </div>
                         <div className="w-20 h-1.5 bg-emerald-200/70 rounded-full overflow-hidden">
                           <div
                             className="bg-emerald-600 h-full rounded-full transition-all duration-500"
-                            style={{ width: `${item.matchPercent || 15}%` }}
+                            style={{ width: `${rankingPercent || 15}%` }}
                           />
                         </div>
                       </div>
@@ -514,6 +515,10 @@ export default function RecommendationsPage() {
                         />
                       </div>
                       <div className="flex items-center justify-between text-slate-600 pt-1">
+                        <span className="font-medium">Profile and member relevance score:</span>
+                        <b className="font-mono text-slate-900">{item.profileRelevancePercent ?? item.matchPercent}%</b>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-600 pt-1">
                         <span className="font-medium">Learned relevance estimate:</span>
                         <b className="font-mono text-slate-900">{item.relevanceProbability == null ? "Gathering ratings" : `${item.relevanceProbability}%`}</b>
                       </div>
@@ -521,7 +526,7 @@ export default function RecommendationsPage() {
                         <span className="font-medium">NCF acceptance estimate (ranking contribution {item.ncfInfluence ?? 0}%):</span>
                         <b className="font-mono text-slate-900">{item.ncfAcceptanceProbability == null ? (meta.ncfModel?.active ? "No estimate for this pair" : "Model not published") : `${item.ncfAcceptanceProbability}%`}</b>
                       </div>
-                      <p className="text-[11px] leading-relaxed text-slate-500">NCF can influence who appears higher when it has a prediction. The match score above remains based on profile fit and member relevance.</p>
+                      <p className="text-[11px] leading-relaxed text-slate-500">The ranking score above drives ordering after NCF (when available) and variety adjustments. Profile and member relevance is shown separately; acceptance estimates are not the same as match quality.</p>
 
                       <div className="flex items-center justify-between text-slate-600 pt-1">
                         <span className="font-medium">Profile &amp; competency overlap:</span>
@@ -537,7 +542,7 @@ export default function RecommendationsPage() {
                       {/* Signals Chips */}
                       <div className="pt-2 border-t border-slate-200/70">
                         <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                          Model Signals · Acceptance {item.mlInfluence ?? 0}% · NCF {item.ncfInfluence ?? 0}% · Feedback {item.relevanceInfluence ?? 0}%
+                          Ranking inputs · NCF share {item.ncfInfluence ?? 0}% · Relevance feedback share {item.relevanceInfluence ?? 0}%
                         </div>
                         <div className="flex flex-wrap gap-1.5 text-[11px]">
                           {[
@@ -605,7 +610,7 @@ export default function RecommendationsPage() {
                             {skill}
                           </Tag>
                         ))}
-                        {(!item.sharedSkills || item.sharedSkills.length === 0) && item.matchPercent === 0 && (
+                        {(!item.sharedSkills || item.sharedSkills.length === 0) && (item.profileRelevancePercent ?? item.matchPercent) === 0 && (
                           <span className="text-xs text-slate-400">No shared skills recorded yet</span>
                         )}
                       </div>

@@ -57,6 +57,13 @@ function computeDCG(relevanceList) {
 }
 
 function evaluateMemberJudgedRanking(events, feedbackRows) {
+  const ownerImpressions = new Map();
+  const establishedAtImpression = new WeakMap();
+  for (const event of [...events].sort((a, b) => a.createdAt - b.createdAt)) {
+    const prior = ownerImpressions.get(event.ownerId) || 0;
+    establishedAtImpression.set(event, prior >= 10);
+    ownerImpressions.set(event.ownerId, prior + 1);
+  }
   const eventsByRecommendation = new Map();
   for (const event of events) {
     const rows = eventsByRecommendation.get(event.recommendationId) || [];
@@ -76,9 +83,10 @@ function evaluateMemberJudgedRanking(events, feedbackRows) {
   const holdout = judged.slice(Math.max(0, judged.length - holdoutSize));
   const groups = new Map();
   for (const row of holdout) {
-    const key = `${row.event.ownerId}:${row.event.createdAt.toISOString()}`;
-    const group = groups.get(key) || [];
-    group.push(row);
+    const memberStage = establishedAtImpression.get(row.event) ? "established" : "new";
+    const key = `${row.event.ownerId}:${row.event.createdAt.toISOString()}:${memberStage}`;
+    const group = groups.get(key) || { rows: [], memberStage };
+    group.rows.push(row);
     groups.set(key, group);
   }
 
@@ -88,8 +96,8 @@ function evaluateMemberJudgedRanking(events, feedbackRows) {
     ["Profile Hybrid", "profileHybrid"],
     ["Learned Relevance", "relevanceProbability"],
   ];
-  const totals = Object.fromEntries(strategies.map(([name]) => [name, { sum: 0, groups: 0 }]));
-  for (const rows of groups.values()) {
+  const totals = Object.fromEntries(strategies.map(([name]) => [name, { values: [], byStage: { new: [], established: [] } }]));
+  for (const { rows, memberStage } of groups.values()) {
     if (rows.length < 2) continue;
     const cutoff = Math.min(5, rows.length);
     const ideal = [...rows].sort((a, b) => b.feedback.rating - a.feedback.rating)
@@ -101,21 +109,40 @@ function evaluateMemberJudgedRanking(events, feedbackRows) {
         .slice(0, cutoff);
       if (ranked.length < 2) continue;
       const ndcg = computeDCG(ranked.map(({ feedback }) => feedback.rating)) / idcg;
-      totals[name].sum += ndcg;
-      totals[name].groups++;
+      totals[name].values.push(ndcg);
+      totals[name].byStage[memberStage].push(ndcg);
     }
   }
 
+  const interval = (values, salt) => {
+    if (values.length < 2) return null;
+    let seed = Number.parseInt(createHash("sha256").update(salt).digest("hex").slice(0, 8), 16) || 1;
+    const random = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+    const samples = [];
+    for (let iteration = 0; iteration < 500; iteration++) {
+      let sum = 0;
+      for (let index = 0; index < values.length; index++) sum += values[Math.floor(random() * values.length)];
+      samples.push(sum / values.length);
+    }
+    samples.sort((a, b) => a - b);
+    return [+(samples[12]).toFixed(3), +(samples[487]).toFixed(3)];
+  };
+
   return {
-    available: Object.values(totals).some(({ groups: count }) => count > 0),
+    available: Object.values(totals).some(({ values }) => values.length > 0),
     feedbackExamples: judged.length,
     holdoutExamples: holdout.length,
     holdoutGroups: groups.size,
-    metrics: Object.fromEntries(Object.entries(totals).map(([name, value]) => [
-      name,
-      { ndcgAt5: value.groups ? +(value.sum / value.groups).toFixed(3) : null, evaluatedGroups: value.groups },
-    ])),
-    note: "Newest 20% of member-rated recommendation impressions; groups with at least two rated candidates. This measures ranking among rated items, not all impressions.",
+    metrics: Object.fromEntries(Object.entries(totals).map(([name, value]) => [name, {
+      ndcgAt5: value.values.length ? +(value.values.reduce((sum, score) => sum + score, 0) / value.values.length).toFixed(3) : null,
+      evaluatedGroups: value.values.length,
+      confidenceInterval95: interval(value.values, name),
+      byMemberHistory: Object.fromEntries(Object.entries(value.byStage).map(([stage, scores]) => [stage, {
+        ndcgAt5: scores.length ? +(scores.reduce((sum, score) => sum + score, 0) / scores.length).toFixed(3) : null,
+        evaluatedGroups: scores.length,
+      }])),
+    }])),
+    note: "Newest 20% of member-rated recommendation impressions; groups with at least two rated candidates. 95% intervals bootstrap judged groups; member history is new (<10 prior served items) or established. This measures ranking among rated items, not all impressions.",
   };
 }
 

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { decryptFrequentFlyerEvidence } from "@/lib/frequent-flyer-verification";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -12,7 +11,7 @@ export async function GET() {
   try {
     const records = await prisma.frequentFlyerVerification.findMany({
       where: { status: "PENDING", user: { role: "FREQUENT_FLYER", isDeleted: false } },
-      include: { user: { select: { id: true, email: true, createdAt: true, profile: { select: { fullName: true, department: true, mentorshipRole: true } } } } },
+      select: { id: true, createdAt: true, user: { select: { id: true, email: true, createdAt: true, profile: { select: { fullName: true, department: true, mentorshipRole: true } } } } },
       orderBy: { createdAt: "asc" },
       take: 100,
     });
@@ -21,7 +20,6 @@ export async function GET() {
       id: record.id,
       submittedAt: record.createdAt,
       member: record.user,
-      evidence: decryptFrequentFlyerEvidence(record.evidenceCiphertext),
     }));
     return NextResponse.json({ reviews });
   } catch (error) {

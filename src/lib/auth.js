@@ -99,9 +99,9 @@ export const authOptions = {
     }),
   ],
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       if (account?.provider === "google") {
-        if (!user.email) return false;
+        if (!user.email || profile?.email_verified !== true) return false;
         const googleEmail = user.email.trim().toLowerCase();
 
         let existingUser = await prisma.user.findUnique({
@@ -109,31 +109,9 @@ export const authOptions = {
           include: { frequentFlyerVerification: { select: { status: true } } },
         });
 
-        if (!existingUser) {
-          // Auto-provision verified user from Google OAuth
-          existingUser = await prisma.user.create({
-            data: {
-              email: googleEmail,
-              passwordHash: "",
-              role: "STAFF",
-              isVerified: true,
-              isSuspended: false,
-              profile: {
-                create: {
-                  fullName: user.name || googleEmail.split("@")[0],
-                  isPublic: false,
-                },
-              },
-            },
-          });
-        }
+        if (!existingUser) return false;
         if (existingUser.isDeleted) return false;
-
-        // Administrator accounts created through an invitation are staged as
-        // unverified. Do not let Google OAuth skip the invitation/password step.
-        if (existingUser.role === "ADMIN" && !existingUser.isVerified) {
-          return false;
-        }
+        if (!existingUser.isVerified) return false;
 
         if (process.env.NODE_ENV === "production" && existingUser.isDemo) {
           return false;

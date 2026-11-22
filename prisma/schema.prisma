@@ -409,7 +409,7 @@ model FrequentFlyerVerification {
   id                 String                          @id @default(cuid())
   userId             String                          @unique
   reviewerId         String?
-  evidenceCiphertext String
+  evidenceCiphertext String?
   status             FrequentFlyerVerificationStatus @default(PENDING)
   reviewedAt         DateTime?
   reviewNote         String?

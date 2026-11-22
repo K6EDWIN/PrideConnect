@@ -60,6 +60,8 @@ function LoginForm() {
       ? "That verification link is invalid."
       : urlError === "missing_token"
       ? "Missing verification token."
+      : urlError === "AccessDenied"
+      ? "This Google account is not linked to a registered and verified PrideConnect account. Create an account with your email first, then use Google sign-in."
       : "";
 
   const handleSubmit = async (e) => {

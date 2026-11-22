@@ -911,13 +911,13 @@ export default function AdminPage() {
                   <b className="text-sm text-slate-900">{benchmark?.adaptiveModel?.trainingExamples ?? 0} resolved requests</b>
                 </div>
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                  <span className="block text-[10px] uppercase tracking-wider font-bold text-slate-400">ML ranking influence</span>
+                  <span className="block text-[10px] uppercase tracking-wider font-bold text-slate-400">Acceptance training maturity</span>
                   <b className="text-sm text-slate-900">{benchmark?.adaptiveModel?.confidence ?? 0}%</b>
                 </div>
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="block text-[10px] uppercase tracking-wider font-bold text-slate-400">NCF interaction model</span>
-                  <b className="text-sm text-slate-900">{benchmark?.adaptiveModel?.ncf?.active ? `Shadow monitoring · ${benchmark.adaptiveModel.ncf.trainingExamples} outcomes` : benchmark?.adaptiveModel?.ncf?.evaluated ? "Evaluated · held back by quality check" : "Waiting for enough interaction history"}</b>
-                  <span className="block text-xs text-slate-500 mt-1">{benchmark?.adaptiveModel?.ncf?.holdoutRocAuc != null ? `Latest holdout · AUC ${(benchmark.adaptiveModel.ncf.holdoutRocAuc * 100).toFixed(1)}% · no ranking influence` : "Requires 80 outcomes and a valid time holdout"}</span>
+                  <b className="text-sm text-slate-900">{benchmark?.adaptiveModel?.ncf?.active ? `Quality-gated ranking · ${benchmark.adaptiveModel.ncf.trainingExamples} outcomes` : benchmark?.adaptiveModel?.ncf?.evaluated ? "Evaluated · held back by quality check" : "Waiting for enough interaction history"}</b>
+                  <span className="block text-xs text-slate-500 mt-1">{benchmark?.adaptiveModel?.ncf?.holdoutRocAuc != null ? `Latest time holdout · AUC ${(benchmark.adaptiveModel.ncf.holdoutRocAuc * 100).toFixed(1)}% · ${benchmark.adaptiveModel.ncf.active ? "10% ranking share when a pair prediction is available" : "no ranking influence"}` : "Requires 80 outcomes and a valid time holdout"}</span>
                   {benchmark?.adaptiveModel?.ncf?.holdoutRocAuc != null && (
                     <span className="block text-[11px] text-slate-500 mt-1">
                       PR-AUC {benchmark.adaptiveModel.ncf.holdoutPrAuc?.toFixed(3) ?? "—"} · Brier {benchmark.adaptiveModel.ncf.holdoutBrierScore?.toFixed(3) ?? "—"} · Coverage {benchmark.adaptiveModel.ncf.holdoutCoverage == null ? "—" : `${(benchmark.adaptiveModel.ncf.holdoutCoverage * 100).toFixed(1)}%`} · NDCG@5 {benchmark.adaptiveModel.ncf.holdoutNdcgAt5?.toFixed(3) ?? "—"} · n={benchmark.adaptiveModel.ncf.holdoutCount ?? "—"}
@@ -928,7 +928,7 @@ export default function AdminPage() {
                       Known in embeddings: {benchmark.adaptiveModel.ncf.knownMembers} · unseen fallback: {benchmark.adaptiveModel.ncf.unseenMembers}
                     </span>
                   )}
-                  <span className="block text-[11px] text-slate-500 mt-1">Promotion still requires repeated time-based comparisons, uncertainty ranges, and separate known/new-member results.</span>
+                  <span className="block text-[11px] text-slate-500 mt-1">Before increasing NCF beyond its limited 10% share, collect repeated time-based comparisons, uncertainty ranges, and separate known/new-member results.</span>
                 </div>
               </div>
 
@@ -1078,6 +1078,8 @@ export default function AdminPage() {
                         <div className="text-[11px] text-slate-500">{name}</div>
                         <b className="text-lg text-slate-900">{metric.ndcgAt5 == null ? "—" : metric.ndcgAt5.toFixed(3)}</b>
                         <div className="text-[10px] text-slate-400">NDCG@5 · {metric.evaluatedGroups} groups</div>
+                        <div className="mt-1 text-[10px] text-slate-500">95% interval: {metric.confidenceInterval95 ? `${metric.confidenceInterval95[0]}–${metric.confidenceInterval95[1]}` : "not enough groups"}</div>
+                        <div className="mt-1 text-[10px] text-slate-500">New: {metric.byMemberHistory?.new?.ndcgAt5 ?? "—"} ({metric.byMemberHistory?.new?.evaluatedGroups ?? 0}) · Established: {metric.byMemberHistory?.established?.ndcgAt5 ?? "—"} ({metric.byMemberHistory?.established?.evaluatedGroups ?? 0})</div>
                       </div>
                     ))}
                   </div>
@@ -1300,8 +1302,8 @@ export default function AdminPage() {
                       <div>ML provider: <b className="text-slate-900">{simulationData.model.provider === "COLAB_DRIVE_ARTIFACT" ? "Colab + Google Drive model" : simulationData.model.provider === "HOSTED_API" ? "Hosted ML API" : simulationData.model.provider}</b></div>
                       {simulationData.model.versions?.acceptance && <div>Model version: <b className="text-slate-900">{simulationData.model.versions.acceptance}</b></div>}
                       {simulationData.model.ncf?.version && <div>NCF version: <b className="text-slate-900">{simulationData.model.ncf.version}</b></div>}
-                      <div>Adaptive ML influence: <b className="text-slate-900">{simulationData.model.confidence}%</b></div>
-                      <div>NCF ranking influence: <b className="text-slate-900">0% (shadow)</b></div>
+                      <div>Acceptance training maturity: <b className="text-slate-900">{simulationData.model.confidence}%</b></div>
+                      <div>NCF ranking share: <b className="text-slate-900">{simulationData.model.ncf?.rankingInfluence ?? 0}% when a pair estimate is available</b></div>
                     </div>
                   </div>
 
@@ -1342,7 +1344,7 @@ export default function AdminPage() {
                                 Profile text alignment: <b className="text-slate-800">{cand.semanticScore}%</b> · Member relevance: <b className="text-slate-800">{cand.relevanceProbability == null ? "Gathering ratings" : `${cand.relevanceProbability}%`}</b>
                                 {cand.diversityAdjustment > 0 && <span className="ml-1 text-emerald-700">· Rank adjusted for variety (-{cand.diversityAdjustment}%)</span>}
                               </span>
-                              {cand.ncfAcceptanceProbability != null && <span className="text-[11px] text-slate-500 block mt-1">NCF shadow acceptance estimate: <b className="text-slate-800">{cand.ncfAcceptanceProbability}%</b> · Ranking influence: <b className="text-slate-800">0%</b></span>}
+                              {cand.ncfAcceptanceProbability != null && <span className="text-[11px] text-slate-500 block mt-1">NCF acceptance estimate: <b className="text-slate-800">{cand.ncfAcceptanceProbability}%</b> · Ranking share: <b className="text-slate-800">{cand.ncfInfluence}%</b></span>}
 
                               {cand.sharedSkills.length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-2">

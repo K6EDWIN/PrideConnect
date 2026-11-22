@@ -5,8 +5,34 @@ import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/audit-log";
 import { escapeHtml } from "@/lib/app-url";
 import { GMAIL_SENDER, sendAppEmail } from "@/lib/gmail";
+import { decryptFrequentFlyerEvidence } from "@/lib/frequent-flyer-verification";
 
 const REVIEW_STATUSES = new Set(["RECORDS_MATCHED", "NOT_CONFIRMED"]);
+
+export async function GET(_request, { params }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  if (session.user.role !== "ADMIN") return NextResponse.json({ error: "Admins only" }, { status: 403 });
+  try {
+    const { id } = await params;
+    const record = await prisma.frequentFlyerVerification.findUnique({
+      where: { id }, select: { evidenceCiphertext: true, status: true, userId: true },
+    });
+    if (!record || record.status !== "PENDING" || !record.evidenceCiphertext) {
+      return NextResponse.json({ error: "Pending review evidence is unavailable." }, { status: 404 });
+    }
+    await logActivity({
+      actorId: session.user.id, targetId: record.userId,
+      actionType: "FREQUENT_FLYER_EVIDENCE_ACCESSED",
+      summary: "Opened private Asante Rewards review evidence",
+      details: { verificationId: id },
+    });
+    return NextResponse.json({ evidence: decryptFrequentFlyerEvidence(record.evidenceCiphertext) });
+  } catch (error) {
+    console.error("Could not open private Asante member review evidence:", error);
+    return NextResponse.json({ error: "Could not open the private review evidence." }, { status: 500 });
+  }
+}
 
 export async function PATCH(request, { params }) {
   const session = await getServerSession(authOptions);
@@ -41,6 +67,7 @@ export async function PATCH(request, { params }) {
       reviewerId: session.user.id,
       reviewedAt,
       reviewNote: reviewNote || null,
+      evidenceCiphertext: null,
     },
   });
   if (result.count !== 1) return NextResponse.json({ error: "This membership review has already been completed." }, { status: 409 });
@@ -50,7 +77,7 @@ export async function PATCH(request, { params }) {
     targetId: record.user.id,
     actionType: "FREQUENT_FLYER_REVIEWED",
     summary: `Reviewed an Asante Rewards membership request: ${body.status}`,
-    details: { verificationId: id, status: body.status, reviewNote: reviewNote || null },
+    details: { verificationId: id, status: body.status },
   });
 
   let notificationSent = false;

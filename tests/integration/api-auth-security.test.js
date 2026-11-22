@@ -217,6 +217,7 @@ describe("Authentication Hardening & Role Authorization Security", () => {
       prisma.user.findUnique.mockResolvedValueOnce({
         id: "suspended-google-user",
         email: "googleuser@kenya-airways.com",
+        isVerified: true,
         isSuspended: true,
         role: "ALUMNI",
       });
@@ -224,6 +225,7 @@ describe("Authentication Hardening & Role Authorization Security", () => {
       const result = await authOptions.callbacks.signIn({
         user: { email: "googleuser@kenya-airways.com" },
         account: { provider: "google" },
+        profile: { email_verified: true },
       });
 
       expect(result).toBe(false);
@@ -241,9 +243,22 @@ describe("Authentication Hardening & Role Authorization Security", () => {
       const result = await authOptions.callbacks.signIn({
         user: { email: "deleted@account.invalid" },
         account: { provider: "google" },
+        profile: { email_verified: true },
       });
 
       expect(result).toBe(false);
+    });
+
+    it("does not create a trusted account for an unregistered Google identity", async () => {
+      prisma.user.findUnique.mockResolvedValueOnce(null);
+      const result = await authOptions.callbacks.signIn({
+        user: { email: "new-member@example.com" },
+        account: { provider: "google" },
+        profile: { email_verified: true },
+      });
+
+      expect(result).toBe(false);
+      expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
     it("invalidates an existing JWT when its account is deleted", async () => {
