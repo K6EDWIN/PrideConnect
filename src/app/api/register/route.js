@@ -6,6 +6,7 @@ import { sendAppEmail } from "@/lib/gmail";
 import { logActivity } from "@/lib/audit-log";
 import { buildAppUrl, escapeHtml } from "@/lib/app-url";
 import { encryptFrequentFlyerEvidence } from "@/lib/frequent-flyer-verification";
+import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 const ALLOWED_REGISTRATION_ROLES = [
   "ALUMNI",
@@ -18,6 +19,8 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request) {
   try {
+    const rateLimit = await consumeRateLimit({ request, scope: "registration-ip", limit: 10, windowMs: 60 * 60 * 1000 });
+    if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfter, "Too many registration attempts. Try again later.");
     const body = await request.json().catch(() => ({}));
     const { email, password, fullName, role } = body;
 

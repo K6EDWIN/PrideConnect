@@ -105,10 +105,13 @@ export function Avatar({ name = "KQ Member", src, size = "md", role, userId, cla
 
   if (activeSrc) {
     return (
-      <img
+      <Image
         alt={name}
         className={`avatar rounded-full object-cover border border-slate-200/80 shadow-xs ${sizeClass} ${className}`}
         src={activeSrc}
+        width={80}
+        height={80}
+        unoptimized
         onError={() => setActiveSrc(null)}
       />
     );

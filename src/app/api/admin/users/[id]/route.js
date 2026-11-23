@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { readRequestJson } from "@/lib/request-json";
 
 const ACTIONS = {
   VERIFY: { field: "isVerified", value: true },
@@ -24,7 +25,11 @@ export async function PATCH(request, { params }) {
   }
 
   const { id } = await params;
-  const { action } = await request.json();
+  const parsed = await readRequestJson(request);
+  if (!parsed.ok || !parsed.data || typeof parsed.data !== "object" || Array.isArray(parsed.data)) {
+    return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
+  }
+  const { action } = parsed.data;
 
   const actionDef = ACTIONS[action];
   if (!actionDef) {

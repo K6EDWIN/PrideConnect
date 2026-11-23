@@ -1,14 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PUT } from "@/app/api/profile/route";
+import { PATCH as patchConnectionRequest } from "@/app/api/connection-requests/[id]/route";
+import { PATCH as patchAdminUser } from "@/app/api/admin/users/[id]/route";
 import { getServerSession } from "next-auth/next";
 import { prisma } from "@/lib/prisma";
 
 vi.mock("next-auth/next", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/lib/audit-log", () => ({ logActivity: vi.fn() }));
+vi.mock("@/lib/notifications", () => ({ createNotification: vi.fn() }));
+vi.mock("@/lib/conversations", () => ({ ensureConversation: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     profile: { findUnique: vi.fn() },
+    connectionRequest: { findUnique: vi.fn(), updateMany: vi.fn() },
+    user: { findUnique: vi.fn(), update: vi.fn() },
+    adminAction: { create: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -23,6 +30,27 @@ function profileRequest(body) {
 
 describe("PUT /api/profile validation", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("returns 400 for a malformed profile JSON body", async () => {
+    getServerSession.mockResolvedValueOnce({ user: { id: "member-1", role: "STAFF" } });
+    const response = await PUT(new Request("http://localhost:3000/api/profile", { method: "PUT", body: "{" }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("Invalid JSON request body");
+  });
+
+  it("returns 400 for malformed connection-request JSON", async () => {
+    getServerSession.mockResolvedValueOnce({ user: { id: "member-1", role: "STAFF" } });
+    const response = await patchConnectionRequest(new Request("http://localhost:3000/api/connection-requests/request-1", { method: "PATCH", body: "{" }), { params: Promise.resolve({ id: "request-1" }) });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("Invalid JSON request body");
+  });
+
+  it("returns 400 for malformed administrator action JSON", async () => {
+    getServerSession.mockResolvedValueOnce({ user: { id: "admin-1", role: "ADMIN" } });
+    const response = await patchAdminUser(new Request("http://localhost:3000/api/admin/users/member-1", { method: "PATCH", body: "{" }), { params: Promise.resolve({ id: "member-1" }) });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("Invalid JSON request body");
+  });
 
   it("requires a full name", async () => {
     getServerSession.mockResolvedValueOnce({ user: { id: "member-1", role: "STAFF" } });

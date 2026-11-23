@@ -3,6 +3,7 @@ import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 import { logActivity } from "./audit-log";
+import { consumeRateLimit } from "@/lib/rate-limit";
 
 export const authOptions = {
   session: {
@@ -27,7 +28,9 @@ export const authOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
+        const loginLimit = await consumeRateLimit({ request, scope: "credentials-login-ip", limit: 15, windowMs: 15 * 60 * 1000 });
+        if (!loginLimit.allowed) throw new Error("Too many sign-in attempts. Try again later.");
         const email = typeof credentials?.email === "string"
           ? credentials.email.trim().toLowerCase()
           : "";

@@ -497,3 +497,12 @@ model Report {
   @@index([status, createdAt])
   @@index([targetType, targetId])
 }
+
+model RateLimitBucket {
+  key             String   @id
+  count           Int      @default(0)
+  windowStartedAt DateTime @default(now())
+  expiresAt       DateTime
+
+  @@index([expiresAt])
+}
