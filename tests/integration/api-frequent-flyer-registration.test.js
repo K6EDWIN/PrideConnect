@@ -7,6 +7,8 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: { findUnique: vi.fn(), create: vi.fn() },
     verificationToken: { create: vi.fn() },
+    rateLimitBucket: { deleteMany: vi.fn() },
+    $queryRaw: vi.fn(),
   },
 }));
 vi.mock("@/lib/gmail", () => ({ sendAppEmail: vi.fn().mockResolvedValue({ messageId: "verify" }) }));
@@ -40,6 +42,8 @@ const validFlyer = {
 describe("Frequent Flyer registration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prisma.$queryRaw.mockResolvedValue([{ count: 1, windowStartedAt: new Date() }]);
+    prisma.rateLimitBucket.deleteMany.mockResolvedValue({ count: 0 });
     process.env.APP_URL = "https://prideconnect.example";
     process.env.FREQUENT_FLYER_VERIFICATION_KEY = Buffer.alloc(32, 7).toString("base64");
     prisma.user.findUnique.mockResolvedValue(null);

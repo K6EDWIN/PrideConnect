@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/audit-log";
+import { readRequestJson } from "@/lib/request-json";
 
 // GET: return the logged-in user's own profile, including their
 // currently selected skills and interests.
@@ -62,7 +63,11 @@ export async function PUT(request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const body = await request.json();
+  const parsed = await readRequestJson(request);
+  if (!parsed.ok || !parsed.data || typeof parsed.data !== "object" || Array.isArray(parsed.data)) {
+    return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
+  }
+  const body = parsed.data;
   const {
     fullName,
     bio,
