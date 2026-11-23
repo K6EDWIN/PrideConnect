@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { hashPasswordResetToken, isValidPassword } from "@/lib/password-reset";
+import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 function invalidTokenResponse() {
   return NextResponse.json({ error: "This password reset link is invalid, expired, or already used. Request a new link and try again." }, { status: 400 });
 }
 
 export async function POST(request) {
+  const rateLimit = await consumeRateLimit({ request, scope: "password-reset-confirm-ip", limit: 20, windowMs: 15 * 60 * 1000 });
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfter);
   const body = await request.json().catch(() => ({}));
   const token = typeof body.token === "string" ? body.token : "";
   const password = body.password;

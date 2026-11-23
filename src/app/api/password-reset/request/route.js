@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { buildAppUrl, escapeHtml } from "@/lib/app-url";
 import { sendAppEmail } from "@/lib/gmail";
 import { createPasswordResetToken, PASSWORD_RESET_COOLDOWN_MS, PASSWORD_RESET_TTL_MS } from "@/lib/password-reset";
+import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 const GENERIC_RESPONSE = {
   message: "If an active account uses that email, a password reset link will be sent shortly.",
@@ -10,6 +11,8 @@ const GENERIC_RESPONSE = {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request) {
+  const addressLimit = await consumeRateLimit({ request, scope: "password-reset-ip", limit: 8, windowMs: 15 * 60 * 1000 });
+  if (!addressLimit.allowed) return rateLimitResponse(addressLimit.retryAfter);
   const body = await request.json().catch(() => ({}));
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   if (!EMAIL_REGEX.test(email) || email.length > 254) {
@@ -17,6 +20,8 @@ export async function POST(request) {
   }
 
   try {
+    const emailLimit = await consumeRateLimit({ request, scope: "password-reset-email", identity: email, limit: 3, windowMs: 60 * 60 * 1000 });
+    if (!emailLimit.allowed) return NextResponse.json(GENERIC_RESPONSE, { status: 202, headers: { "Cache-Control": "no-store" } });
     const user = await prisma.user.findUnique({
       where: { email },
       select: { id: true, email: true, isVerified: true, isSuspended: true, isDeleted: true, isDemo: true, passwordHash: true, profile: { select: { fullName: true } } },

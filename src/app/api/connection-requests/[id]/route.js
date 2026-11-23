@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
 import { ensureConversation } from "@/lib/conversations";
 import { logActivity } from "@/lib/audit-log";
+import { readRequestJson } from "@/lib/request-json";
 
 const VALID_STATUSES = ["ACCEPTED", "DECLINED"];
 
@@ -19,7 +20,11 @@ export async function PATCH(request, { params }) {
   }
 
   const { id } = await params;
-  const { status } = await request.json();
+  const parsed = await readRequestJson(request);
+  if (!parsed.ok || !parsed.data || typeof parsed.data !== "object" || Array.isArray(parsed.data)) {
+    return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
+  }
+  const { status } = parsed.data;
 
   if (!VALID_STATUSES.includes(status)) {
     return NextResponse.json(

@@ -10,6 +10,8 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: { findUnique: vi.fn(), update: vi.fn() },
     passwordResetToken: { findUnique: vi.fn(), upsert: vi.fn(), deleteMany: vi.fn(), updateMany: vi.fn() },
+    rateLimitBucket: { deleteMany: vi.fn() },
+    $queryRaw: vi.fn(),
     $transaction: vi.fn(),
   },
 }));
@@ -22,6 +24,8 @@ function post(url, body) {
 describe("password reset workflow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prisma.$queryRaw.mockResolvedValue([{ count: 1, windowStartedAt: new Date() }]);
+    prisma.rateLimitBucket.deleteMany.mockResolvedValue({ count: 0 });
     process.env.APP_URL = "https://prideconnect.example";
     prisma.passwordResetToken.deleteMany.mockResolvedValue({ count: 1 });
     prisma.passwordResetToken.upsert.mockResolvedValue({});
@@ -59,6 +63,24 @@ describe("password reset workflow", () => {
     expect(await response.json()).toEqual({ message: "If an active account uses that email, a password reset link will be sent shortly." });
     expect(sendAppEmail).not.toHaveBeenCalled();
     expect(prisma.passwordResetToken.upsert).not.toHaveBeenCalled();
+  });
+
+  it("returns a generic response when the per-email reset limit is reached", async () => {
+    prisma.$queryRaw
+      .mockResolvedValueOnce([{ count: 1, windowStartedAt: new Date() }])
+      .mockResolvedValueOnce([{ count: 4, windowStartedAt: new Date() }]);
+    const response = await requestPasswordReset(post("https://prideconnect.example/api/password-reset/request", { email: "person@example.com" }));
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ message: "If an active account uses that email, a password reset link will be sent shortly." });
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rate limits reset-token confirmation attempts by request address", async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([{ count: 21, windowStartedAt: new Date() }]);
+    const response = await confirmPasswordReset(post("https://prideconnect.example/api/password-reset/confirm", { token: "d".repeat(43), password: "NewStrongPass123" }));
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBeTruthy();
+    expect(prisma.passwordResetToken.findUnique).not.toHaveBeenCalled();
   });
 
   it("hashes and saves a new password and consumes the token atomically", async () => {

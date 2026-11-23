@@ -37,15 +37,32 @@ vi.mock("@/lib/prisma", () => ({
     opportunity: {
       count: vi.fn().mockResolvedValue(0),
     },
+    rateLimitBucket: { deleteMany: vi.fn() },
+    $queryRaw: vi.fn(),
   },
 }));
 
 describe("Authentication Hardening & Role Authorization Security", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prisma.$queryRaw.mockResolvedValue([{ count: 1, windowStartedAt: new Date() }]);
+    prisma.rateLimitBucket.deleteMany.mockResolvedValue({ count: 0 });
   });
 
   describe("POST /api/register - Role Whitelisting & Input Validation", () => {
+    it("rate limits repeated registration attempts from one address", async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([{ count: 11, windowStartedAt: new Date() }]);
+      const req = new Request("http://localhost:3000/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "new@example.com", password: "password1234", fullName: "New Member", role: "STAFF" }),
+      });
+      const response = await POST(req);
+      expect(response.status).toBe(429);
+      expect(response.headers.get("retry-after")).toBeTruthy();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
     it("strictly rejects registration requests attempting to claim ADMIN role", async () => {
       const req = new Request("http://localhost:3000/api/register", {
         method: "POST",
@@ -163,6 +180,14 @@ describe("Authentication Hardening & Role Authorization Security", () => {
   });
 
   describe("Suspended Account Enforcement in NextAuth", () => {
+    it("rate limits repeated credentials sign-in attempts by address", async () => {
+      const credentialsProvider = authOptions.providers.find((p) => p.name === "Credentials");
+      prisma.$queryRaw.mockResolvedValueOnce([{ count: 16, windowStartedAt: new Date() }]);
+      await expect(credentialsProvider.options.authorize({ email: "member@example.com", password: "bad-password" }))
+        .rejects.toThrow(/Too many sign-in attempts/i);
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
     it("blocks Frequent Flyer sign-in while a membership review is pending", async () => {
       const credentialsProvider = authOptions.providers.find((p) => p.name === "Credentials");
       prisma.user.findUnique.mockResolvedValueOnce({
