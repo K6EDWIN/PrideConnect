@@ -18,7 +18,7 @@ This is an academic capstone prototype developed at Strathmore University. It is
 - [Project structure](#project-structure)
 - [Privacy and responsible use](#privacy-and-responsible-use)
 - [Documentation](#documentation)
-- [Academic information](#academic-information)
+- [Authorship](#authorship)
 - [License](#license)
 
 ## What the application does

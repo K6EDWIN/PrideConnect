@@ -9,10 +9,24 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: prideconnect_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d prideconnect_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       # Placeholder values so build-time route collection succeeds without a
       # live database/email provider. Not secrets - see .env.example.
-      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/stakeholder_matching"
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/prideconnect_test?schema=public"
       NEXTAUTH_SECRET: "ci-placeholder-secret"
       RESEND_API_KEY: "re_ci_placeholder"
       APP_URL: "http://localhost:3000"
@@ -32,6 +46,9 @@ jobs:
 
       - name: Validate Prisma schema
         run: npx prisma validate
+
+      - name: Apply all migrations to an empty PostgreSQL database
+        run: npx prisma migrate deploy
 
       - name: Run tests
         run: npm test

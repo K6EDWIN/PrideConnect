@@ -12,30 +12,29 @@ export async function GET(request) {
     );
   }
 
-  const verificationToken = await prisma.verificationToken.findUnique({
-    where: { token },
+  const result = await prisma.$transaction(async (tx) => {
+    const verificationToken = await tx.verificationToken.findUnique({ where: { token } });
+    if (!verificationToken) return { status: "invalid" };
+    if (verificationToken.expiresAt <= new Date()) {
+      await tx.verificationToken.deleteMany({ where: { token, expiresAt: { lte: new Date() } } });
+      return { status: "expired" };
+    }
+    const consumed = await tx.verificationToken.deleteMany({
+      where: { token, expiresAt: { gt: new Date() } },
+    });
+    if (consumed.count !== 1) return { status: "invalid" };
+    const user = await tx.user.update({
+      where: { id: verificationToken.userId },
+      data: { isVerified: true },
+      select: { id: true, email: true, role: true },
+    });
+    return { status: "verified", user };
   });
 
-  if (!verificationToken) {
-    return NextResponse.redirect(
-      new URL("/login?error=invalid_token", request.url)
-    );
+  if (result.status !== "verified") {
+    return NextResponse.redirect(new URL(`/login?error=${result.status === "expired" ? "expired_token" : "invalid_token"}`, request.url));
   }
-
-  if (verificationToken.expiresAt < new Date()) {
-    await prisma.verificationToken.delete({ where: { token } });
-    return NextResponse.redirect(
-      new URL("/login?error=expired_token", request.url)
-    );
-  }
-
-  const user = await prisma.user.update({
-    where: { id: verificationToken.userId },
-    data: { isVerified: true },
-    select: { id: true, email: true, role: true },
-  });
-
-  await prisma.verificationToken.delete({ where: { token } });
+  const { user } = result;
 
   await logActivity({
     actorId: user.id,

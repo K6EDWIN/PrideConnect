@@ -370,6 +370,7 @@ export default function EventsPage() {
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 {visibleEvents.map((e) => {
                   const d = new Date(e.eventDate);
+                  const isPast = e.isPast || d <= new Date();
                   const isPending = rsvpPendingId === e.id;
 
                   return (
@@ -414,10 +415,10 @@ export default function EventsPage() {
                         <Button
                           variant={e.isJoined ? "secondary" : "primary"}
                           onClick={() => toggleRsvp(e.id, e.isJoined)}
-                          disabled={isPending}
+                          disabled={isPending || (isPast && !e.isJoined)}
                           className="text-xs py-1.5 px-3 min-h-0 w-full sm:w-auto"
                         >
-                          {isPending
+                          {isPast && !e.isJoined ? "Registration closed" : isPending
                             ? "Updating..."
                             : e.isJoined
                             ? "Cancel RSVP"

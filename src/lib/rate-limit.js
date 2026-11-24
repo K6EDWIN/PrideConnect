@@ -2,15 +2,14 @@ import { createHmac } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-function getClientAddress(request) {
-  const headers = request?.headers;
-  const header = (name) => typeof headers?.get === "function"
-    ? headers.get(name)
-    : headers?.[name] || headers?.[name.toLowerCase()];
-  const realIp = header("x-real-ip")?.trim();
-  if (realIp) return realIp;
-  const forwarded = header("x-forwarded-for")?.split(",").map((value) => value.trim()).filter(Boolean);
-  return forwarded?.at(-1) || "unknown";
+export function getClientAddress(request) {
+  // Vercel overwrites x-real-ip at its trusted edge; ignore caller-supplied forwarding chains.
+  if (process.env.VERCEL === "1") {
+    const address = request?.headers?.get?.("x-real-ip")?.trim();
+    if (address && address.length <= 64 && !/[\s,]/.test(address)) return address;
+  }
+  // Share a conservative bucket elsewhere until a trusted proxy integration is configured.
+  return "shared-untrusted-client-address";
 }
 
 function hashBucketKey(scope, value) {

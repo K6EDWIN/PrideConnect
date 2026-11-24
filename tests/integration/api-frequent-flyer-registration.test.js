@@ -67,7 +67,7 @@ describe("Frequent Flyer registration", () => {
 
   it("stores flight and Asante details encrypted in the private review record", async () => {
     const response = await register(post(validFlyer));
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(202);
     const createArgs = prisma.user.create.mock.calls[0][0];
     const ciphertext = createArgs.data.frequentFlyerVerification.create.evidenceCiphertext;
     expect(ciphertext).not.toContain(validFlyer.frequentFlyerEvidence.asanteRewardsNumber);

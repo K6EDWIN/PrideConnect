@@ -20,12 +20,15 @@ export default function MessagesPage() {
   const [conversations, setConversations] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [messages, setMessages] = useState([]);
+  const [nextMessageCursor, setNextMessageCursor] = useState(null);
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [sentNotice, setSentNotice] = useState("");
   const messagesRequestVersion = useRef(0);
+  const messageHistoryRef = useRef(null);
 
   const loadConversations = useCallback(async () => {
     const response = await fetch("/api/conversations", { cache: "no-store" });
@@ -56,7 +59,14 @@ export default function MessagesPage() {
     const response = await fetch(`/api/conversations/${selectedId}/messages`, { cache: "no-store" });
     const data = await readApiResponse(response, "Could not load messages");
     // Ignore older polling responses that arrive after a newer fetch or send.
-    if (requestVersion === messagesRequestVersion.current && isActive()) setMessages(data.messages || []);
+    if (requestVersion === messagesRequestVersion.current && isActive()) {
+      setMessages((existing) => {
+        const byId = new Map(existing.map((message) => [message.id, message]));
+        for (const message of data.messages || []) byId.set(message.id, message);
+        return [...byId.values()].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      });
+      setNextMessageCursor((current) => current || data.nextCursor || null);
+    }
   }, [selectedId]);
 
   useEffect(() => {
@@ -75,6 +85,32 @@ export default function MessagesPage() {
   }, [selectedId, loadMessages]);
 
   const activeConversation = conversations.find((conversation) => conversation.id === selectedId);
+
+  const loadOlderMessages = async () => {
+    if (!selectedId || !nextMessageCursor || loadingOlderMessages) return;
+    const historyElement = messageHistoryRef.current;
+    const previousHeight = historyElement?.scrollHeight || 0;
+    const previousScrollTop = historyElement?.scrollTop || 0;
+    setLoadingOlderMessages(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/conversations/${selectedId}/messages?before=${encodeURIComponent(nextMessageCursor)}`, { cache: "no-store" });
+      const data = await readApiResponse(response, "Could not load older messages");
+      setMessages((existing) => {
+        const byId = new Map(existing.map((message) => [message.id, message]));
+        for (const message of data.messages || []) byId.set(message.id, message);
+        return [...byId.values()].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      });
+      setNextMessageCursor(data.nextCursor || null);
+      requestAnimationFrame(() => {
+        if (historyElement) historyElement.scrollTop = previousScrollTop + historyElement.scrollHeight - previousHeight;
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingOlderMessages(false);
+    }
+  };
 
   const sendMessage = async (event) => {
     event.preventDefault();
@@ -135,7 +171,7 @@ export default function MessagesPage() {
                 {conversations.map((conversation) => {
                   const name = conversation.partner.profile?.fullName || conversation.partner.email;
                   return (
-                    <button key={conversation.id} type="button" onClick={() => { setSelectedId(conversation.id); setMessages([]); setSentNotice(""); }} className={`messages-conversation-row flex w-full items-start gap-3 border-b border-slate-100 p-4 text-left transition hover:bg-slate-50 ${selectedId === conversation.id ? "is-active bg-red-50/70" : ""}`}>
+                    <button key={conversation.id} type="button" onClick={() => { setSelectedId(conversation.id); setMessages([]); setNextMessageCursor(null); setSentNotice(""); }} className={`messages-conversation-row flex w-full items-start gap-3 border-b border-slate-100 p-4 text-left transition hover:bg-slate-50 ${selectedId === conversation.id ? "is-active bg-red-50/70" : ""}`}>
                       <Avatar name={name} size="md" />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center justify-between gap-2">
@@ -168,7 +204,8 @@ export default function MessagesPage() {
                     <p className="text-xs text-slate-500">{activeConversation.partner.profile?.department || "PrideConnect member"} · Private chat</p>
                   </div>
                 </header>
-                <div className="messages-thread-history flex-1 space-y-3 overflow-y-auto p-5" aria-live="polite">
+                <div ref={messageHistoryRef} className="messages-thread-history flex-1 space-y-3 overflow-y-auto p-5" aria-live="polite">
+                  {nextMessageCursor && <div className="text-center"><button type="button" onClick={loadOlderMessages} disabled={loadingOlderMessages} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60">{loadingOlderMessages ? "Loading older messages…" : "Load older messages"}</button></div>}
                   {messages.length ? messages.map((message) => {
                     const mine = message.senderId === session?.user?.id;
                     return (

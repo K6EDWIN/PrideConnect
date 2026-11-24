@@ -159,5 +159,11 @@ describe("GET /api/recommendations API Endpoint", () => {
       confidence: 0,
       status: "GATHERING_OUTCOMES",
     });
+    expect(prisma.recommendationEvent.createMany).toHaveBeenCalledWith(expect.objectContaining({
+      skipDuplicates: true,
+      data: expect.arrayContaining([
+        expect.objectContaining({ eventType: "SERVED", dedupeKey: expect.stringMatching(/^[a-f0-9]{64}$/) }),
+      ]),
+    }));
   });
 });

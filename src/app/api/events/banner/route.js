@@ -2,6 +2,7 @@ import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 const MAX_BANNER_BYTES = 4 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -18,6 +19,9 @@ async function matchesImageType(file) {
 export async function POST(request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  const uploadLimit = await consumeRateLimit({ request, scope: "event-banner-user", identity: session.user.id, limit: 8, windowMs: 60 * 60 * 1000 });
+  if (!uploadLimit.allowed) return rateLimitResponse(uploadLimit.retryAfter, "You have uploaded several banners recently. Try again later.");
 
   const hasReadWriteToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
   const hasVercelOidcStore = process.env.VERCEL === "1" && Boolean(process.env.BLOB_STORE_ID);

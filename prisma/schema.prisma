@@ -263,6 +263,7 @@ model RecommendationEvent {
   policy           String?
   selectionProbability Float?
   scores           Json?
+  dedupeKey        String?  @unique
   createdAt        DateTime @default(now())
 
   owner            User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)

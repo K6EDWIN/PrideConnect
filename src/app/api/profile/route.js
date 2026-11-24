@@ -68,6 +68,14 @@ export async function PUT(request) {
     return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
   }
   const body = parsed.data;
+  const allowedFields = new Set([
+    "fullName", "bio", "department", "professionalBackground", "trainingHistory",
+    "careerGoals", "mentorshipNeeds", "mentorshipRole", "availability", "isPublic",
+    "skillIds", "interestIds", "seekingTopicIds", "offeringTopicIds",
+  ]);
+  if (Object.keys(body).some((key) => !allowedFields.has(key))) {
+    return NextResponse.json({ error: "Profile update contains unsupported fields" }, { status: 400 });
+  }
   const {
     fullName,
     bio,
@@ -85,13 +93,34 @@ export async function PUT(request) {
     offeringTopicIds = [],
   } = body;
 
-  if (!fullName) {
+  if (typeof fullName !== "string" || fullName.trim().length < 2 || fullName.trim().length > 100) {
     return NextResponse.json(
-      { error: "fullName is required" },
+      { error: "Full name must contain between 2 and 100 characters" },
       { status: 400 }
     );
   }
-  if (![skillIds, interestIds, seekingTopicIds, offeringTopicIds].every((ids) => Array.isArray(ids) && ids.every((id) => typeof id === "string"))) {
+  const textLimits = {
+    bio: 2000,
+    department: 120,
+    professionalBackground: 4000,
+    trainingHistory: 3000,
+    careerGoals: 2000,
+    mentorshipNeeds: 2000,
+    availability: 500,
+  };
+  for (const [field, maxLength] of Object.entries(textLimits)) {
+    const value = body[field];
+    if (value !== undefined && value !== null && (typeof value !== "string" || value.length > maxLength)) {
+      return NextResponse.json({ error: `${field} must be text no longer than ${maxLength} characters` }, { status: 400 });
+    }
+  }
+  if (body.isPublic !== undefined && typeof body.isPublic !== "boolean") {
+    return NextResponse.json({ error: "isPublic must be a boolean" }, { status: 400 });
+  }
+  if (body.mentorshipRole !== undefined && body.mentorshipRole !== null && !["MENTOR", "MENTEE", "BOTH"].includes(body.mentorshipRole)) {
+    return NextResponse.json({ error: "mentorshipRole is invalid" }, { status: 400 });
+  }
+  if (![skillIds, interestIds, seekingTopicIds, offeringTopicIds].every((ids) => Array.isArray(ids) && ids.length <= 100 && ids.every((id) => typeof id === "string" && id.length > 0 && id.length <= 128 && !/\s/.test(id)))) {
     return NextResponse.json({ error: "Profile selections must be arrays of identifiers" }, { status: 400 });
   }
 
@@ -111,7 +140,7 @@ export async function PUT(request) {
     prisma.profile.update({
       where: { id: profile.id },
       data: {
-        fullName,
+        fullName: fullName.trim(),
         bio,
         department,
         professionalBackground: isAdmin ? null : professionalBackground,

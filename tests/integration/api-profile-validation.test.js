@@ -56,7 +56,7 @@ describe("PUT /api/profile validation", () => {
     getServerSession.mockResolvedValueOnce({ user: { id: "member-1", role: "STAFF" } });
     const response = await PUT(profileRequest({ fullName: "" }));
     expect(response.status).toBe(400);
-    expect((await response.json()).error).toBe("fullName is required");
+    expect((await response.json()).error).toMatch(/full name must contain/i);
     expect(prisma.profile.findUnique).not.toHaveBeenCalled();
   });
 
@@ -65,6 +65,21 @@ describe("PUT /api/profile validation", () => {
     const response = await PUT(profileRequest({ fullName: "Member", skillIds: ["skill-1", 42] }));
     expect(response.status).toBe(400);
     expect((await response.json()).error).toBe("Profile selections must be arrays of identifiers");
+    expect(prisma.profile.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized profile text before database writes", async () => {
+    getServerSession.mockResolvedValueOnce({ user: { id: "member-1", role: "STAFF" } });
+    const response = await PUT(profileRequest({ fullName: "Member Name", bio: "x".repeat(2001) }));
+    expect(response.status).toBe(400);
+    expect(prisma.profile.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejects unexpected properties instead of silently ignoring them", async () => {
+    getServerSession.mockResolvedValueOnce({ user: { id: "member-1", role: "STAFF" } });
+    const response = await PUT(profileRequest({ fullName: "Member Name", isAdmin: true }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/unsupported fields/i);
     expect(prisma.profile.findUnique).not.toHaveBeenCalled();
   });
 });

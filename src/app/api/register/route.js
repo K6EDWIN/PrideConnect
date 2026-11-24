@@ -89,8 +89,8 @@ export async function POST(request) {
     const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existing) {
       return NextResponse.json(
-        { error: "An account with that email already exists" },
-        { status: 409 }
+        { message: "If this address can be registered, verification instructions will be sent. If you already have an account, sign in or request a fresh verification link." },
+        { status: 202 }
       );
     }
 
@@ -250,17 +250,14 @@ export async function POST(request) {
       // Don't fail registration if the email fails to send -- log it so
       // you can see the issue in the terminal, but still let the user know
       // their account was created.
-      console.error("Failed to send verification email:", emailErr);
+      console.error("Failed to send verification email:", emailErr?.code || "EMAIL_DELIVERY_ERROR");
     }
-
-    const { passwordHash: _omit, ...safeUser } = user;
 
     return NextResponse.json(
       {
-        user: safeUser,
-        message: "Registration successful. Check your email to verify your account.",
+        message: "If this address can be registered, verification instructions will be sent. If you already have an account, sign in or request a fresh verification link.",
       },
-      { status: 201 }
+      { status: 202 }
     );
   } catch (err) {
     console.error("Registration error:", err);

@@ -15,7 +15,7 @@ import { diversifyRankedCandidates, explainProfileMatch } from "@/lib/profile-ve
 import { getMlUserKey } from "@/lib/ml-sync-auth";
 import { isEligibleMentorshipMatch } from "@/lib/matching-eligibility";
 import { withNcfRankingSignal } from "@/lib/ncf-ranking";
-import { randomInt } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import { Prisma } from "@prisma/client";
 
 const CANDIDATE_PREFETCH_SIZE = 750;
@@ -290,10 +290,16 @@ export async function GET() {
   );
 
   const recommendationIds = new Map(savedRecommendations.map((row) => [row.matchedUserId, row.id]));
+  // One view of a candidate per member per 30-minute window. The unique key
+  // also prevents concurrent refreshes from double-counting the same display.
+  const impressionWindow = Math.floor(Date.now() / (30 * 60 * 1000));
   await prisma.recommendationEvent.createMany({
     data: rankedCandidates.map((item, index) => ({
       ownerId: session.user.id,
       recommendationId: recommendationIds.get(item.candidate.user.id),
+      dedupeKey: createHash("sha256")
+        .update(`${session.user.id}:${recommendationIds.get(item.candidate.user.id)}:${impressionWindow}`)
+        .digest("hex"),
       eventType: "SERVED",
       rank: index + 1,
       policy: item.exploration ? "RANDOM_QUALIFIED_LAST_SLOT_V1" : item.ncfInfluence > 0 ? "NCF_ASSISTED_PROFILE_RANKING_V1" : "DETERMINISTIC_PROFILE_RELEVANCE_V3",
@@ -310,6 +316,7 @@ export async function GET() {
         ncfRankingInfluence: item.ncfInfluence,
       },
     })),
+    skipDuplicates: true,
   });
   const feedbackByCandidate = new Map(feedbackRows.map((row) => [row.recommendation?.matchedUserId, row.rating]));
   const ranked = rankedCandidates
