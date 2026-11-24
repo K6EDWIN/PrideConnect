@@ -3,6 +3,7 @@ import "./workspace-responsive.css";
 import "./classic-polish.css";
 import Providers from "./providers";
 import Nav from "@/components/Nav";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata = {
   title: "PrideConnect | Kenya Airways Community Network",
@@ -21,6 +22,7 @@ export default function RootLayout({ children, profile }) {
           {children}
           {profile}
         </Providers>
+        <Analytics />
       </body>
     </html>
   );
