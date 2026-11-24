@@ -19,7 +19,9 @@ export async function POST(request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  const hasReadWriteToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  const hasVercelOidcStore = process.env.VERCEL === "1" && Boolean(process.env.BLOB_STORE_ID);
+  if (!hasReadWriteToken && !hasVercelOidcStore) {
     return NextResponse.json({ error: "Banner uploads are not configured yet. Add a Vercel Blob store to enable them." }, { status: 503 });
   }
 
