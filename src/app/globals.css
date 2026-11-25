@@ -3323,10 +3323,6 @@ html[data-view-mode="classic"] .admin-console main h4 {
   color: #0f172a !important;
   font-weight: 700 !important;
 }
-html[data-view-mode="classic"] .app-page p {
-  color: #334155 !important;
-}
-
 /* Atmospheric Command Header preserves crisp white on dark gradient */
 html[data-view-mode="classic"] .app-page section[class*="bg-gradient"] h1,
 html[data-view-mode="classic"] .app-page section[class*="bg-gradient"] h2,
@@ -3346,26 +3342,44 @@ html[data-view-mode="classic"] .app-page .app-dark-hero p {
 html[data-view-mode="classic"] .app-page .profile-hero h1 {
   color: #ffffff !important;
 }
+html[data-view-mode="classic"] .app-page .profile-hero .profile-subtitle {
+  color: #e2e8f0 !important;
+  position: relative;
+  top: -8px;
+  text-shadow: 0 1px 2px rgba(7, 22, 38, 0.55);
+}
 html[data-view-mode="classic"] .app-page .text-white {
   color: #ffffff !important;
 }
 
-/* Classic Mode Contrast Elevators - eliminate washed-out grey text */
-html[data-view-mode="classic"] .text-slate-400,
-html[data-view-mode="classic"] [class*="text-slate-400"],
-html[data-view-mode="classic"] .text-gray-400,
-html[data-view-mode="classic"] [class*="text-gray-400"] {
+/* Keep muted copy readable on light content without darkening text on dark shells. */
+html[data-view-mode="classic"] :is(.app-page, .admin-console main) .text-slate-400,
+html[data-view-mode="classic"] :is(.app-page, .admin-console main) [class*="text-slate-400"],
+html[data-view-mode="classic"] :is(.app-page, .admin-console main) .text-gray-400,
+html[data-view-mode="classic"] :is(.app-page, .admin-console main) [class*="text-gray-400"] {
   color: #64748b !important;
 }
-html[data-view-mode="classic"] .text-slate-500,
-html[data-view-mode="classic"] [class*="text-slate-500"],
-html[data-view-mode="classic"] .text-gray-500,
-html[data-view-mode="classic"] [class*="text-gray-500"] {
+html[data-view-mode="classic"] :is(.app-page, .admin-console main) .text-slate-500,
+html[data-view-mode="classic"] :is(.app-page, .admin-console main) [class*="text-slate-500"],
+html[data-view-mode="classic"] :is(.app-page, .admin-console main) .text-gray-500,
+html[data-view-mode="classic"] :is(.app-page, .admin-console main) [class*="text-gray-500"] {
   color: #475569 !important;
 }
-html[data-view-mode="classic"] .text-slate-600,
-html[data-view-mode="classic"] [class*="text-slate-600"] {
+html[data-view-mode="classic"] :is(.app-page, .admin-console main) .text-slate-600,
+html[data-view-mode="classic"] :is(.app-page, .admin-console main) [class*="text-slate-600"] {
   color: #334155 !important;
+}
+
+/* Dark hero surfaces use light muted text, including nested labels and metrics. */
+html[data-view-mode="classic"] .app-page .app-dark-hero [class*="text-slate-400"],
+html[data-view-mode="classic"] .app-page section[class*="bg-gradient"] [class*="text-slate-400"],
+html[data-view-mode="classic"] .app-page .app-dark-hero [class*="text-slate-500"],
+html[data-view-mode="classic"] .app-page section[class*="bg-gradient"] [class*="text-slate-500"] {
+  color: #cbd5e1 !important;
+}
+html[data-view-mode="classic"] .app-page .app-dark-hero [class*="text-slate-600"],
+html[data-view-mode="classic"] .app-page section[class*="bg-gradient"] [class*="text-slate-600"] {
+  color: #e2e8f0 !important;
 }
 
 /* --- 5. MODERN MODE (Dark Executive Operations - User Image 5) --- */
@@ -3476,6 +3490,10 @@ html[data-view-mode="modern"] .text-gray-400 {
   color: var(--modern-dim) !important;
 }
 
+html[data-view-mode="modern"] .app-page .profile-hero .profile-subtitle {
+  color: #e2e8f0 !important;
+}
+
 /* Modern Mode Inversion: Light Backgrounds -> Dark Containers */
 html[data-view-mode="modern"] .app-page .bg-slate-50,
 html[data-view-mode="modern"] .app-page .bg-slate-100,
@@ -3543,4 +3561,33 @@ html[data-view-mode="modern"] [class*="bg-sky-50"] {
   color: #7dd3fc !important;
   background-color: rgba(56, 189, 248, 0.15) !important;
   border-color: rgba(56, 189, 248, 0.3) !important;
+}
+
+/* On narrow screens the profile identity sits below the banner on the light card. */
+@media (max-width: 640px) {
+  html[data-view-mode="classic"] .app-page .profile-hero .profile-subtitle,
+  html[data-view-mode="modern"] .app-page .profile-hero .profile-subtitle {
+    top: 0;
+    color: #475569 !important;
+    text-shadow: none;
+  }
+}
+
+/* Message body colors must be set on the bubble text itself: page-wide paragraph
+   colors should never override the contrast chosen for each conversation bubble. */
+html[data-view-mode="classic"] .messages-page .messages-bubble-mine p,
+html[data-view-mode="modern"] .messages-page .messages-bubble-mine p {
+  color: #f8fafc !important;
+}
+html[data-view-mode="classic"] .messages-page .messages-bubble-mine time,
+html[data-view-mode="modern"] .messages-page .messages-bubble-mine time {
+  color: #cbd5e1 !important;
+}
+html[data-view-mode="classic"] .messages-page .messages-bubble-theirs p,
+html[data-view-mode="modern"] .messages-page .messages-bubble-theirs p {
+  color: #1e293b !important;
+}
+html[data-view-mode="classic"] .messages-page .messages-bubble-theirs time,
+html[data-view-mode="modern"] .messages-page .messages-bubble-theirs time {
+  color: #64748b !important;
 }

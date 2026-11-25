@@ -326,7 +326,7 @@ export default function ProfileEditor({ adminWorkspace = false, standalone = fal
                 <h1 className="break-words text-2xl font-extrabold text-slate-900 tracking-tight">
                   {form.fullName || "Your Profile"}
                 </h1>
-                <p className="mt-0.5 break-words text-xs text-slate-500">
+                <p className="profile-subtitle mt-0.5 break-words text-xs text-slate-500">
                   {isAdmin ? "Executive Administration" : form.department || "Kenya Airways Stakeholder"} · {session?.user?.email} · {isAdmin ? "Executive Administrator" : "Verified Member"}
                 </p>
 

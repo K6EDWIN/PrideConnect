@@ -21,80 +21,12 @@
 }
 .app-skip-link:focus { transform: translateY(0); }
 
-/* Classic admin workspace: use a familiar top-level section bar and full-width
-   content instead of the persistent command rail used by Modern View. */
+/* Classic keeps its light content theme and shares the persistent admin rail
+   with Modern View so the workspace navigation stays in one predictable place. */
 html[data-view-mode="classic"] .admin-console {
   min-height: 100vh;
   background: #f3f6fa;
   color: #17263b;
-}
-html[data-view-mode="classic"] .admin-console .admin-tabs {
-  position: sticky !important;
-  z-index: 35 !important;
-  top: 72px !important;
-  right: auto !important;
-  bottom: auto !important;
-  left: auto !important;
-  display: flex !important;
-  width: 100% !important;
-  min-height: 58px !important;
-  margin: 0 !important;
-  padding: 7px clamp(14px, 3vw, 40px) !important;
-  flex: 0 0 auto !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  gap: 6px !important;
-  overflow-x: auto !important;
-  overflow-y: hidden !important;
-  background: #fff !important;
-  border: 0 !important;
-  border-bottom: 1px solid #dbe3ed !important;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, .045);
-  scrollbar-width: thin;
-}
-html[data-view-mode="classic"] .admin-console .admin-tabs::before {
-  display: none !important;
-}
-html[data-view-mode="classic"] .admin-console .admin-tabs .admin-sidebar-brand,
-html[data-view-mode="classic"] .admin-console .admin-tabs .admin-sidebar-footer {
-  display: none !important;
-}
-html[data-view-mode="classic"] .admin-console .admin-tabs > button {
-  width: auto !important;
-  min-width: max-content !important;
-  min-height: 42px !important;
-  padding: 0 13px !important;
-  flex: 0 0 auto !important;
-  color: #43546b !important;
-  background: transparent !important;
-  border: 1px solid transparent !important;
-  border-bottom-width: 2px !important;
-  border-radius: 8px !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  text-align: center !important;
-  text-transform: none !important;
-  letter-spacing: 0 !important;
-}
-html[data-view-mode="classic"] .admin-console .admin-tabs > button:hover {
-  color: #10243a !important;
-  background: #f1f5f9 !important;
-}
-html[data-view-mode="classic"] .admin-console .admin-tabs > button[class*="border-[#c8102e]"] {
-  color: #9f1239 !important;
-  background: #fff1f2 !important;
-  border-color: #fecdd3 !important;
-  border-bottom-color: #c8102e !important;
-}
-html[data-view-mode="classic"] .admin-console .admin-tabs > button[class*="border-[#c8102e]"] svg {
-  color: #c8102e !important;
-}
-html[data-view-mode="classic"] .admin-console > header ~ div.bg-white,
-html[data-view-mode="classic"] .admin-console main {
-  width: 100% !important;
-  max-width: 1480px !important;
-  margin-inline: auto !important;
 }
 html[data-view-mode="classic"] .admin-console > header ~ div.bg-white {
   max-width: none !important;
@@ -123,28 +55,14 @@ html[data-view-mode="classic"] .admin-console main textarea {
   min-height: 90px;
 }
 
-/* Keep the top bar readable at tablet widths and let the section bar scroll on phones. */
-@media (max-width: 900px) {
-  html[data-view-mode="classic"] .admin-console .admin-tabs {
-    top: 72px !important;
-    min-height: 54px !important;
-    padding-inline: 10px !important;
-  }
-  html[data-view-mode="classic"] .admin-console .admin-tabs > button {
-    min-height: 40px !important;
-    padding-inline: 10px !important;
-  }
-}
+/* Keep the top masthead readable on phones; the shared admin rail becomes a
+   horizontally scrollable section bar at the tablet breakpoint. */
 @media (max-width: 640px) {
   html[data-view-mode="classic"] .admin-console > header {
     position: relative !important;
   }
   html[data-view-mode="classic"] .admin-console > header .admin-header-inner {
     max-width: none;
-  }
-  html[data-view-mode="classic"] .admin-console .admin-tabs {
-    position: sticky !important;
-    top: 0 !important;
   }
   html[data-view-mode="classic"] .admin-console main {
     padding: 18px 12px 36px !important;
