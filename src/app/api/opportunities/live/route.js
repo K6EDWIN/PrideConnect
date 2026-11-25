@@ -23,9 +23,9 @@ async function fetchJson(url) {
   const response = await fetch(url, {
     headers: { Accept: "application/json", "User-Agent": "PrideConnect opportunity feed" },
     signal: AbortSignal.timeout(12_000),
-    // Match the opportunities page refresh cadence while keeping the upstream
-    // careers service behind Next.js's shared cache between member requests.
-    next: { revalidate: 5 },
+    // The opportunities page refreshes once a minute and exposes a manual
+    // refresh action. Keep shared upstream traffic on that same cadence.
+    next: { revalidate: 60 },
   });
   if (!response.ok || !response.headers.get("content-type")?.includes("application/json")) {
     throw new Error("Kenya Airways Careers did not return listing data");

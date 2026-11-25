@@ -37,6 +37,10 @@ vi.mock("@/lib/prisma", () => ({
     opportunity: {
       count: vi.fn().mockResolvedValue(0),
     },
+    adminAction: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: "mock-audit-id" }),
+    },
     rateLimitBucket: { deleteMany: vi.fn() },
     $queryRaw: vi.fn(),
   },
@@ -195,6 +199,31 @@ describe("Authentication Hardening & Role Authorization Security", () => {
   });
 
   describe("Suspended Account Enforcement in NextAuth", () => {
+    it("greets the first credentials sign-in and returning sign-ins by profile name", async () => {
+      const credentialsProvider = authOptions.providers.find((p) => p.name === "Credentials");
+      prisma.user.findUnique.mockResolvedValue({
+        id: "welcome-member",
+        email: "member@example.com",
+        passwordHash: await bcrypt.hash("validpassword", 10),
+        isVerified: true,
+        isSuspended: false,
+        isDeleted: false,
+        isDemo: false,
+        role: "STAFF",
+        sessionVersion: 0,
+        profile: { fullName: "Edwin Kamau" },
+      });
+      prisma.adminAction.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: "prior-sign-in" });
+
+      const firstSignIn = await credentialsProvider.options.authorize({ email: "member@example.com", password: "validpassword" });
+      const returningSignIn = await credentialsProvider.options.authorize({ email: "member@example.com", password: "validpassword" });
+
+      expect(firstSignIn).toMatchObject({ name: "Edwin Kamau", isFirstSignIn: true });
+      expect(returningSignIn).toMatchObject({ name: "Edwin Kamau", isFirstSignIn: false });
+    });
+
     it("rate limits repeated credentials sign-in attempts by address", async () => {
       const credentialsProvider = authOptions.providers.find((p) => p.name === "Credentials");
       prisma.$queryRaw.mockResolvedValueOnce([{ count: 16, windowStartedAt: new Date() }]);
@@ -386,6 +415,23 @@ describe("Authentication Hardening & Role Authorization Security", () => {
       expect(session.user.id).toBe("active-valid-user");
       expect(session.user.role).toBe("STAFF");
       expect(session.user.isSuspended).toBe(false);
+    });
+
+    it("exposes the profile name and first-sign-in flag to the client session", async () => {
+      const session = await authOptions.callbacks.session({
+        session: { user: { email: "member@example.com" } },
+        token: {
+          id: "new-member",
+          name: "Edwin Kamau",
+          role: "STAFF",
+          isFirstSignIn: true,
+          isSuspended: false,
+          isDeleted: false,
+        },
+      });
+
+      expect(session.user.name).toBe("Edwin Kamau");
+      expect(session.user.isFirstSignIn).toBe(true);
     });
   });
 

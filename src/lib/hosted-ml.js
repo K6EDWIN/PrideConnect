@@ -145,7 +145,9 @@ export async function getAdaptivePredictions({ examples, relevanceExamples = [],
         candidates,
       }),
       cache: "no-store",
-      signal: AbortSignal.timeout(10000),
+      // Fall back to the local model quickly when the optional hosted service
+      // is cold or unreachable; recommendation pages should not wait 10s.
+      signal: AbortSignal.timeout(3000),
     });
 
     if (!response.ok) {

@@ -27,12 +27,13 @@ export default function KQAppShell({ children }) {
           if (active && data) setUnreadCount(data.unreadCount || 0);
         })
         .catch(() => {});
-    refresh();
-    const interval = setInterval(refresh, 60000);
+    const onNotificationsPage = pathname === "/notifications";
+    if (!onNotificationsPage) refresh();
+    const interval = onNotificationsPage ? null : setInterval(refresh, 60000);
     window.addEventListener("notifications-updated", refresh);
     return () => {
       active = false;
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
       window.removeEventListener("notifications-updated", refresh);
     };
   }, [session?.user?.id, pathname]);

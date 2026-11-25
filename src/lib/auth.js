@@ -41,7 +41,10 @@ export const authOptions = {
 
         const user = await prisma.user.findUnique({
           where: { email },
-          include: { frequentFlyerVerification: { select: { status: true } } },
+          include: {
+            frequentFlyerVerification: { select: { status: true } },
+            profile: { select: { fullName: true } },
+          },
         });
 
         if (!user) {
@@ -81,6 +84,11 @@ export const authOptions = {
           throw new Error(genericFailure);
         }
 
+        const previousSignIn = await prisma.adminAction.findFirst({
+          where: { adminId: user.id, actionType: "USER_SIGNED_IN" },
+          select: { id: true },
+        });
+
         await logActivity({
           actorId: user.id,
           targetId: user.id,
@@ -92,8 +100,10 @@ export const authOptions = {
         return {
           id: user.id,
           email: user.email,
+          name: user.profile?.fullName || user.email,
           role: user.role,
           sessionVersion: user.sessionVersion || 0,
+          isFirstSignIn: !previousSignIn,
         };
       },
     }),
@@ -106,7 +116,10 @@ export const authOptions = {
 
         let existingUser = await prisma.user.findUnique({
           where: { email: googleEmail },
-          include: { frequentFlyerVerification: { select: { status: true } } },
+          include: {
+            frequentFlyerVerification: { select: { status: true } },
+            profile: { select: { fullName: true } },
+          },
         });
 
         if (!existingUser) return false;
@@ -127,8 +140,14 @@ export const authOptions = {
         }
 
         user.id = existingUser.id;
+        user.name = existingUser.profile?.fullName || user.name || existingUser.email;
         user.role = existingUser.role;
         user.sessionVersion = existingUser.sessionVersion || 0;
+        const previousSignIn = await prisma.adminAction.findFirst({
+          where: { adminId: existingUser.id, actionType: "USER_SIGNED_IN" },
+          select: { id: true },
+        });
+        user.isFirstSignIn = !previousSignIn;
         await logActivity({
           actorId: existingUser.id,
           targetId: existingUser.id,
@@ -143,10 +162,12 @@ export const authOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
+        token.name = user.name || user.email;
         token.role = user.role;
         token.sessionVersion = user.sessionVersion || 0;
         token.isSuspended = Boolean(user.isSuspended);
         token.isDeleted = Boolean(user.isDeleted);
+        token.isFirstSignIn = Boolean(user.isFirstSignIn);
       }
 
       // Check database for active suspension status on existing session tokens
@@ -184,8 +205,10 @@ export const authOptions = {
 
       if (session.user) {
         session.user.id = token.id;
+        session.user.name = token.name || session.user.name || session.user.email;
         session.user.role = token.role;
         session.user.isSuspended = token.isSuspended || false;
+        session.user.isFirstSignIn = Boolean(token.isFirstSignIn);
       }
       return session;
     },

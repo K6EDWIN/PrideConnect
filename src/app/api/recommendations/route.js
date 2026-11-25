@@ -20,6 +20,63 @@ import { Prisma } from "@prisma/client";
 
 const CANDIDATE_PREFETCH_SIZE = 750;
 const INTERACTION_HISTORY_LIMIT = 5000;
+const SHARED_MODEL_CACHE_MS = 60_000;
+let sharedModelSnapshot = null;
+let sharedModelSnapshotPromise = null;
+
+async function getSharedModelSnapshot() {
+  if (sharedModelSnapshot && sharedModelSnapshot.expiresAt > Date.now()) return sharedModelSnapshot.value;
+  if (sharedModelSnapshotPromise) return sharedModelSnapshotPromise;
+
+  sharedModelSnapshotPromise = Promise.all([
+    prisma.mentorshipRequest.findMany({
+      where: { status: "ACCEPTED", sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
+      select: { senderId: true, receiverId: true }, orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
+    }),
+    prisma.connectionRequest.findMany({
+      where: { status: "ACCEPTED", sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
+      select: { senderId: true, receiverId: true }, orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
+    }),
+    prisma.mentorshipRequest.findMany({
+      where: { status: { in: ["ACCEPTED", "DECLINED"] }, sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
+      select: { status: true, modelFeatures: true }, orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
+    }),
+    prisma.connectionRequest.findMany({
+      where: { status: { in: ["ACCEPTED", "DECLINED"] }, sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
+      select: { status: true, modelFeatures: true }, orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
+    }),
+    prisma.recommendationEvent.count({
+      where: { eventType: "SERVED", owner: { is: { isDemo: false, isDeleted: false } }, recommendation: { is: { matchedUser: { is: { isDemo: false, isDeleted: false } } } } },
+    }),
+    prisma.feedback.count({
+      where: {
+        user: { isDemo: false, isDeleted: false },
+        OR: [{ rating: { gte: 4 } }, { rating: { lte: 2 } }],
+        AND: [{ OR: [
+          { recommendation: { is: { owner: { is: { isDemo: false, isDeleted: false } }, matchedUser: { is: { isDemo: false, isDeleted: false } } } } },
+          { mentorshipRequest: { is: { sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } } } },
+        ] }],
+      },
+    }),
+  ]).then(([acceptedMentorships, acceptedConnections, resolvedMentorships, resolvedConnections, servedHistoryCount, usefulFeedbackCount]) => {
+    const resolved = [...resolvedMentorships, ...resolvedConnections];
+    const examples = buildTrainingExamples(resolved);
+    const value = {
+      acceptedMentorships,
+      acceptedConnections,
+      connectionsByUser: buildConnectionsByUser([...acceptedMentorships, ...acceptedConnections]),
+      examples,
+      model: trainAcceptanceModel(examples),
+      totalInteractions: acceptedMentorships.length + acceptedConnections.length,
+      servedHistoryCount,
+      usefulFeedbackCount,
+    };
+    sharedModelSnapshot = { value, expiresAt: Date.now() + SHARED_MODEL_CACHE_MS };
+    return value;
+  }).finally(() => { sharedModelSnapshotPromise = null; });
+
+  return sharedModelSnapshotPromise;
+}
 
 // GET /api/recommendations
 // Fits a small acceptance model from resolved, feature-snapshotted live
@@ -105,38 +162,8 @@ export async function GET() {
   }) : [];
   const eligibleCandidates = candidates.filter((candidate) => isEligibleMentorshipMatch(ownerProfile, candidate));
 
-  const [acceptedMentorships, acceptedConnections, resolvedMentorships, resolvedConnections] = await Promise.all([
-    prisma.mentorshipRequest.findMany({
-      where: { status: "ACCEPTED", sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
-      select: { senderId: true, receiverId: true },
-      orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
-    }),
-    prisma.connectionRequest.findMany({
-      where: { status: "ACCEPTED", sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
-      select: { senderId: true, receiverId: true },
-      orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
-    }),
-    prisma.mentorshipRequest.findMany({
-      where: { status: { in: ["ACCEPTED", "DECLINED"] }, sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
-      select: { status: true, modelFeatures: true },
-      orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
-    }),
-    prisma.connectionRequest.findMany({
-      where: { status: { in: ["ACCEPTED", "DECLINED"] }, sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
-      select: { status: true, modelFeatures: true },
-      orderBy: { createdAt: "desc" }, take: INTERACTION_HISTORY_LIMIT,
-    }),
-  ]);
-
-  const connectionsByUser = buildConnectionsByUser([
-    ...acceptedMentorships,
-    ...acceptedConnections,
-  ]);
-  const examples = buildTrainingExamples([
-    ...resolvedMentorships,
-    ...resolvedConnections,
-  ]);
-  const model = trainAcceptanceModel(examples);
+  const sharedModel = await getSharedModelSnapshot();
+  const { acceptedMentorships, acceptedConnections, connectionsByUser, examples, model, totalInteractions } = sharedModel;
   const feedbackRows = await prisma.feedback.findMany({
     where: {
       feedbackType: "MATCH_RELEVANCE",
@@ -153,7 +180,6 @@ export async function GET() {
     where: { active: true },
     orderBy: { createdAt: "desc" },
   });
-  const totalInteractions = acceptedMentorships.length + acceptedConnections.length;
   const collaborativeScores = computeCollaborativeScores(
     connectionsByUser,
     session.user.id,
@@ -237,27 +263,7 @@ export async function GET() {
   );
   let rankedCandidates = diversifiedAll.slice(0, 12).map((item) => ({ ...item, exploration: false, selectionProbability: 1 }));
   const explorationPool = diversifiedAll.filter((item) => !rankedCandidates.some((selected) => selected.candidate.user.id === item.candidate.user.id));
-  const [servedHistoryCount, usefulFeedbackCount] = await Promise.all([
-    prisma.recommendationEvent.count({
-      where: {
-        eventType: "SERVED",
-        owner: { is: { isDemo: false, isDeleted: false } },
-        recommendation: { is: { matchedUser: { is: { isDemo: false, isDeleted: false } } } },
-      },
-    }),
-    prisma.feedback.count({
-      where: {
-        user: { isDemo: false, isDeleted: false },
-        OR: [{ rating: { gte: 4 } }, { rating: { lte: 2 } }],
-        AND: [{
-          OR: [
-            { recommendation: { is: { owner: { is: { isDemo: false, isDeleted: false } }, matchedUser: { is: { isDemo: false, isDeleted: false } } } } },
-            { mentorshipRequest: { is: { sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } } } },
-          ],
-        }],
-      },
-    }),
-  ]);
+  const { servedHistoryCount, usefulFeedbackCount } = sharedModel;
   const explorationEnabled = process.env.RECOMMENDATION_EXPLORATION_ENABLED === "true" &&
     servedHistoryCount >= 500 && usefulFeedbackCount >= 100 && rankedCandidates.length >= 12 && explorationPool.length > 0;
   if (explorationEnabled) {

@@ -129,6 +129,12 @@ export default function RecommendationsPage() {
     });
   }, [recommendations, searchQuery, roleFilter, minScore, mentorshipFilter]);
 
+  const profileName = session?.user?.name?.trim();
+  const accountLabel = session?.user?.email?.split("@")[0]?.replace(/[._-]+/g, " ").trim();
+  const welcomeName = (profileName && !profileName.includes("@") ? profileName : accountLabel)
+    ?.split(/\s+/)[0] || "there";
+  const welcomeMessage = session?.user?.isFirstSignIn ? "Welcome" : "Welcome back";
+
   useEffect(() => {
     if (!filteredMatches.length || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver((entries) => {
@@ -271,7 +277,7 @@ export default function RecommendationsPage() {
                   <span>LIVE ADAPTIVE MATCHING ENGINE</span>
                 </div>
                 <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-white" style={{ color: "#ffffff" }}>
-                  Welcome back{session?.user?.name ? `, ${session.user.name.split(" ")[0]}` : ""}.
+                  {welcomeMessage}, {welcomeName}.
                 </h1>
                 <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-xl">
                   AI-driven stakeholder matchmaking connecting Kenya Airways alumni, flight operations, and corporate specialists across technical competencies and mentorship goals.

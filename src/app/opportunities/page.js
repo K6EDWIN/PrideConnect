@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import KQAppShell from "@/components/KQAppShell";
@@ -43,6 +43,8 @@ export default function OpportunitiesPage() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
   const [careersRefreshedAt, setCareersRefreshedAt] = useState("");
+  const [careersRefreshing, setCareersRefreshing] = useState(false);
+  const careersRefreshRef = useRef(null);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -71,6 +73,7 @@ export default function OpportunitiesPage() {
       }
     };
     const refreshCareers = async () => {
+      if (!cancelled) setCareersRefreshing(true);
       try {
         const response = await fetch("/api/opportunities/live", { cache: "no-store" });
         const data = await readApiResponse(response, "Could not refresh Kenya Airways Careers listings");
@@ -83,14 +86,21 @@ export default function OpportunitiesPage() {
         }
       } catch (refreshError) {
         if (!cancelled && saved.length === 0) setError(refreshError.message || "Could not load opportunities.");
+      } finally {
+        if (!cancelled) setCareersRefreshing(false);
       }
     };
+    careersRefreshRef.current = refreshCareers;
     loadSaved();
     refreshCareers();
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") refreshCareers();
-    }, 5000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    }, 60000);
+    const refreshOnReturn = () => {
+      if (document.visibilityState === "visible") refreshCareers();
+    };
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => { cancelled = true; careersRefreshRef.current = null; window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshOnReturn); };
   }, [status]);
 
   const handleChange = (e) => {
@@ -180,7 +190,7 @@ export default function OpportunitiesPage() {
             <p>
               Current Kenya Airways careers listings refresh automatically, alongside community opportunities.
             </p>
-            {careersRefreshedAt && <p className="mt-1 text-xs text-slate-500">Careers feed checked {careersRefreshedAt}. The feed refreshes while this page is open.</p>}
+            {careersRefreshedAt && <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500"><span>Careers feed checked {careersRefreshedAt}. It refreshes once a minute while this page is open.</span><button type="button" onClick={() => careersRefreshRef.current?.()} disabled={careersRefreshing} className="font-semibold text-[#c8102e] hover:underline disabled:opacity-60">{careersRefreshing ? "Refreshing…" : "Refresh now"}</button></div>}
           </div>
           <div className="flex flex-wrap gap-2 sm:justify-end">
             <a href="#opportunity-list" className="rounded-lg bg-[#c8102e] px-4 py-2 text-center text-sm font-semibold text-white hover:bg-[#a90d27]">Explore opportunities</a>

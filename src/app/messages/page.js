@@ -28,6 +28,7 @@ export default function MessagesPage() {
   const [error, setError] = useState("");
   const [sentNotice, setSentNotice] = useState("");
   const messagesRequestVersion = useRef(0);
+  const latestMessageIdRef = useRef(null);
   const messageHistoryRef = useRef(null);
 
   const loadConversations = useCallback(async () => {
@@ -56,7 +57,9 @@ export default function MessagesPage() {
   const loadMessages = useCallback(async (isActive = () => true) => {
     if (!selectedId) return;
     const requestVersion = ++messagesRequestVersion.current;
-    const response = await fetch(`/api/conversations/${selectedId}/messages`, { cache: "no-store" });
+    const after = latestMessageIdRef.current;
+    const query = after ? `?after=${encodeURIComponent(after)}` : "";
+    const response = await fetch(`/api/conversations/${selectedId}/messages${query}`, { cache: "no-store" });
     const data = await readApiResponse(response, "Could not load messages");
     // Ignore older polling responses that arrive after a newer fetch or send.
     if (requestVersion === messagesRequestVersion.current && isActive()) {
@@ -65,6 +68,7 @@ export default function MessagesPage() {
         for (const message of data.messages || []) byId.set(message.id, message);
         return [...byId.values()].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
       });
+      if (data.messages?.length) latestMessageIdRef.current = data.messages[data.messages.length - 1].id;
       setNextMessageCursor((current) => current || data.nextCursor || null);
     }
   }, [selectedId]);
@@ -72,15 +76,20 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!selectedId) return undefined;
     let active = true;
-    const refresh = () => loadMessages(() => active).catch((err) => { if (active) setError(err.message); });
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      loadMessages(() => active).catch((err) => { if (active) setError(err.message); });
+    };
     refresh();
-    const interval = setInterval(refresh, 12000);
+    const interval = setInterval(refresh, 20000);
+    document.addEventListener("visibilitychange", refresh);
     const url = new URL(window.location.href);
     url.searchParams.set("conversationId", selectedId);
     window.history.replaceState(null, "", url);
     return () => {
       active = false;
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", refresh);
     };
   }, [selectedId, loadMessages]);
 
@@ -101,6 +110,7 @@ export default function MessagesPage() {
         for (const message of data.messages || []) byId.set(message.id, message);
         return [...byId.values()].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
       });
+      if (data.messages?.length) latestMessageIdRef.current = data.messages[data.messages.length - 1].id;
       setNextMessageCursor(data.nextCursor || null);
       requestAnimationFrame(() => {
         if (historyElement) historyElement.scrollTop = previousScrollTop + historyElement.scrollHeight - previousHeight;
@@ -131,6 +141,7 @@ export default function MessagesPage() {
       // cannot replace this newly sent message with an older conversation.
       messagesRequestVersion.current++;
       setMessages((items) => items.some((item) => item.id === data.message.id) ? items : [...items, data.message]);
+      latestMessageIdRef.current = data.message.id;
       setConversations((items) => items.map((conversation) => conversation.id === selectedId
         ? { ...conversation, lastMessage: data.message, updatedAt: data.message.createdAt }
         : conversation));
@@ -171,7 +182,7 @@ export default function MessagesPage() {
                 {conversations.map((conversation) => {
                   const name = conversation.partner.profile?.fullName || conversation.partner.email;
                   return (
-                    <button key={conversation.id} type="button" onClick={() => { setSelectedId(conversation.id); setMessages([]); setNextMessageCursor(null); setSentNotice(""); }} className={`messages-conversation-row flex w-full items-start gap-3 border-b border-slate-100 p-4 text-left transition hover:bg-slate-50 ${selectedId === conversation.id ? "is-active bg-red-50/70" : ""}`}>
+                <button key={conversation.id} type="button" onClick={() => { latestMessageIdRef.current = null; setSelectedId(conversation.id); setMessages([]); setNextMessageCursor(null); setSentNotice(""); }} className={`messages-conversation-row flex w-full items-start gap-3 border-b border-slate-100 p-4 text-left transition hover:bg-slate-50 ${selectedId === conversation.id ? "is-active bg-red-50/70" : ""}`}>
                       <Avatar name={name} size="md" />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center justify-between gap-2">

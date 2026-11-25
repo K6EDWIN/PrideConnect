@@ -9,5 +9,7 @@ export async function GET() {
     prisma.interest.findMany({ orderBy: { name: "asc" } }),
   ]);
 
-  return NextResponse.json({ skills, interests });
+  return NextResponse.json({ skills, interests }, {
+    headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400" },
+  });
 }
