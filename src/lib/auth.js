@@ -29,13 +29,14 @@ export const authOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials, request) {
+        const genericFailure = "Unable to sign in with those credentials. Check your details or use account recovery.";
         const loginLimit = await consumeRateLimit({ request, scope: "credentials-login-ip", limit: 15, windowMs: 15 * 60 * 1000 });
         if (!loginLimit.allowed) throw new Error("Too many sign-in attempts. Try again later.");
         const email = typeof credentials?.email === "string"
           ? credentials.email.trim().toLowerCase()
           : "";
         if (!email || !credentials?.password) {
-          throw new Error("Email and password are required");
+          throw new Error(genericFailure);
         }
 
         const user = await prisma.user.findUnique({
@@ -44,18 +45,18 @@ export const authOptions = {
         });
 
         if (!user) {
-          throw new Error("No account found with that email");
+          throw new Error(genericFailure);
         }
         if (user.isDeleted) {
-          throw new Error("This account has been deleted.");
+          throw new Error(genericFailure);
         }
 
         if (process.env.NODE_ENV === "production" && user.isDemo) {
-          throw new Error("Demonstration accounts cannot sign in to the live service.");
+          throw new Error(genericFailure);
         }
 
         if (!user.passwordHash) {
-          throw new Error("This account uses Google sign-in. Continue with Google.");
+          throw new Error(genericFailure);
         }
 
         const isValid = await bcrypt.compare(
@@ -64,24 +65,20 @@ export const authOptions = {
         );
 
         if (!isValid) {
-          throw new Error("Incorrect password");
+          throw new Error(genericFailure);
         }
 
         if (!user.isVerified) {
-          throw new Error(
-            "Please verify your email before logging in. Check your inbox for the verification link."
-          );
+          throw new Error(genericFailure);
         }
 
         if (user.isSuspended) {
-          throw new Error(
-            "This account has been suspended. Contact an administrator."
-          );
+          throw new Error(genericFailure);
         }
 
         if (user.role === "FREQUENT_FLYER" && user.frequentFlyerVerification
           && user.frequentFlyerVerification.status !== "RECORDS_MATCHED") {
-          throw new Error("Your Asante membership review is pending or could not be confirmed. Contact a PrideConnect administrator.");
+          throw new Error(genericFailure);
         }
 
         await logActivity({

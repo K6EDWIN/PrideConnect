@@ -33,7 +33,7 @@ async function getConversationForMember(id, userId) {
   return { conversation, partnerId };
 }
 
-export async function GET(_request, { params }) {
+export async function GET(request, { params }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -42,13 +42,39 @@ export async function GET(_request, { params }) {
   const access = await getConversationForMember(id, session.user.id);
   if (access.error) return NextResponse.json({ error: access.error }, { status: access.status });
 
-  const messages = await prisma.message.findMany({
-    where: { conversationId: id },
+  const url = new URL(request.url);
+  const beforeId = url.searchParams.get("before");
+  let cursorMessage = null;
+  if (beforeId) {
+    cursorMessage = await prisma.message.findFirst({
+      where: { id: beforeId, conversationId: id },
+      select: { id: true, createdAt: true },
+    });
+    if (!cursorMessage) return NextResponse.json({ error: "Message cursor is invalid" }, { status: 400 });
+  }
+
+  const where = { conversationId: id };
+  if (cursorMessage) {
+    where.OR = [
+      { createdAt: { lt: cursorMessage.createdAt } },
+      { createdAt: cursorMessage.createdAt, id: { lt: cursorMessage.id } },
+    ];
+  }
+  const rows = await prisma.message.findMany({
+    where,
     include: { sender: { select: { id: true, profile: { select: { fullName: true } } } } },
-    orderBy: { createdAt: "asc" },
-    take: 100,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 101,
   });
-  return NextResponse.json({ conversation: access.conversation, messages });
+  const hasMore = rows.length > 100;
+  const page = rows.slice(0, 100);
+  const messages = page.reverse();
+  return NextResponse.json({
+    conversation: access.conversation,
+    messages,
+    hasMore,
+    nextCursor: hasMore && messages.length ? messages[0].id : null,
+  });
 }
 
 export async function POST(request, { params }) {

@@ -207,7 +207,7 @@ function RegisterForm() {
                     Verify Your Email Address
                   </h2>
                   <p className="text-sm text-slate-600 max-w-md mx-auto">
-                    We sent a secure activation link to <b>{form.email}</b>. Please check your inbox to confirm your Kenya Airways stakeholder registration.
+                    If this address can be registered, verification instructions will be sent to <b>{form.email}</b>. Check your inbox. If you already have an account or no email arrives, sign in or request a fresh verification link.
                   </p>
                   {form.role === "FREQUENT_FLYER" && (
                     <p className="text-sm text-slate-600 max-w-md mx-auto">
@@ -215,8 +215,7 @@ function RegisterForm() {
                     </p>
                   )}
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600 max-w-md mx-auto text-left">
-                    <b className="text-slate-800 block mb-1">Developer Testing Note:</b>
-                    If testing locally without live SMTP credentials, the activation link is also printed in your dev server terminal.
+                    Verification links expire after 24 hours. Use the resend option on the sign-in page if your link expires or does not arrive.
                   </div>
                   <div className="pt-2">
                     <Link href="/login" className="btn btn-primary px-8">

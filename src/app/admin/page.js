@@ -539,7 +539,7 @@ export default function AdminPage() {
         </div>
       </header>
 
-      {/* Shared admin navigation: horizontal tabs in Classic, persistent rail in Modern. */}
+      {/* Shared admin navigation: persistent rail on desktop in both views. */}
       <nav className="admin-tabs flex items-center gap-1 sm:gap-2 border-t border-slate-800/80 pt-1 -mb-px overflow-x-auto" aria-label="Admin workspace">
         <div className="admin-sidebar-brand"><KQLogo light /></div>
         <button

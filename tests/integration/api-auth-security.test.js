@@ -171,11 +171,26 @@ describe("Authentication Hardening & Role Authorization Security", () => {
       const res = await POST(req);
       const data = await res.json();
 
-      expect(res.status).toBe(201);
-      expect(data.user.id).toBe("user-new-staff");
-      expect(data.user.role).toBe("STAFF");
-      expect(data.user.passwordHash).toBeUndefined();
+      expect(res.status).toBe(202);
+      expect(data.message).toMatch(/if this address can be registered/i);
+      expect(data.user).toBeUndefined();
       expect(data.token).toBeUndefined(); // Verification token is NOT leaked in response
+    });
+
+    it("returns the same public response for an existing email without exposing account state", async () => {
+      prisma.user.findUnique.mockResolvedValueOnce({ id: "existing-member" });
+      const req = new Request("http://localhost:3000/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "existing@example.com", password: "securePassword123", fullName: "Existing Member", role: "STAFF" }),
+      });
+      const response = await POST(req);
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({
+        message: "If this address can be registered, verification instructions will be sent. If you already have an account, sign in or request a fresh verification link.",
+      });
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.verificationToken.create).not.toHaveBeenCalled();
     });
   });
 
@@ -203,7 +218,7 @@ describe("Authentication Hardening & Role Authorization Security", () => {
       });
 
       await expect(credentialsProvider.options.authorize({ email: "flyer@example.com", password: "validpassword" }))
-        .rejects.toThrow(/membership review is pending or could not be confirmed/i);
+        .rejects.toThrow(/unable to sign in with those credentials/i);
     });
 
     it("rejects Credentials login when account is suspended (isSuspended: true)", async () => {
@@ -228,7 +243,7 @@ describe("Authentication Hardening & Role Authorization Security", () => {
             email: "suspended@kenya-airways.com",
             password: "validpassword",
           })
-        ).rejects.toThrow(/account has been suspended/i);
+        ).rejects.toThrow(/unable to sign in with those credentials/i);
       } else {
         const result = await credentialsProvider.authorize({
           email: "suspended@kenya-airways.com",

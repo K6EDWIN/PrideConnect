@@ -24,6 +24,8 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [liveStats, setLiveStats] = useState(null);
   const [googleAvailable, setGoogleAvailable] = useState(false);
+  const [resendMessage, setResendMessage] = useState("");
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -60,6 +62,8 @@ function LoginForm() {
       ? "That verification link is invalid."
       : urlError === "missing_token"
       ? "Missing verification token."
+      : urlError === "unverified"
+      ? "Verify your email before signing in. You can request a fresh link below."
       : urlError === "AccessDenied"
       ? "This Google account is not linked to a registered and verified PrideConnect account. Create an account with your email first, then use Google sign-in."
       : "";
@@ -94,6 +98,24 @@ function LoginForm() {
 
   const handleGoogleSignIn = () => {
     signIn("google", { callbackUrl: "/recommendations" });
+  };
+
+  const handleResendVerification = async () => {
+    setResending(true);
+    setResendMessage("");
+    try {
+      const response = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await readApiResponse(response, "Could not process that request");
+      setResendMessage(data.message || "If an unverified account matches that email, a fresh verification link will be sent.");
+    } catch (err) {
+      setResendMessage(err.message);
+    } finally {
+      setResending(false);
+    }
   };
 
   return (
@@ -212,6 +234,8 @@ function LoginForm() {
                   <span>{error}</span>
                 </div>
               )}
+              {urlError === "unverified" && <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Your email may still need verification. Enter the email used to register and resend the link below.</div>}
+              {resendMessage && <p role="status" className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-700">{resendMessage}</p>}
 
               {googleAvailable && (
                 <>
@@ -293,6 +317,10 @@ function LoginForm() {
                     <Link href="/register" className="text-[#c8102e] hover:underline font-semibold">Need an account?</Link>
                   </div>
                 </div>
+
+                <button type="button" onClick={handleResendVerification} disabled={resending || !email.trim()} className="text-xs font-semibold text-[#c8102e] hover:underline disabled:cursor-not-allowed disabled:opacity-50">
+                  {resending ? "Sending…" : "Didn’t receive your verification email? Resend it"}
+                </button>
 
                 <Button
                   type="submit"

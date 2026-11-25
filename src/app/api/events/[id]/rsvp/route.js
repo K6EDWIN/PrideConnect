@@ -19,6 +19,9 @@ export async function POST(request, { params }) {
   if (!event || event.isHidden) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
+  if (event.eventDate <= new Date()) {
+    return NextResponse.json({ error: "Registration is closed because this event has already started." }, { status: 410 });
+  }
 
   await prisma.eventParticipant.upsert({
     where: { eventId_userId: { eventId: id, userId: session.user.id } },
