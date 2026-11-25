@@ -32,6 +32,9 @@ export default function DirectoryPage() {
 
   const [meta, setMeta] = useState({ skills: [], interests: [] });
   const [profiles, setProfiles] = useState([]);
+  const [profilesTotal, setProfilesTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
@@ -78,6 +81,7 @@ export default function DirectoryPage() {
       if (filters.interest) params.set("interest", filters.interest);
       if (filters.department) params.set("department", filters.department);
       if (filters.q) params.set("q", filters.q);
+      params.set("page", String(page));
 
       try {
         setLoading(true);
@@ -85,6 +89,8 @@ export default function DirectoryPage() {
         const res = await fetch(`/api/directory?${params.toString()}`, { signal: controller.signal });
         const data = await readApiResponse(res, "Could not load directory");
         setProfiles(data.profiles || []);
+        setProfilesTotal(data.total || 0);
+        setTotalPages(data.totalPages || 1);
       } catch (err) {
         if (err.name !== "AbortError") setError(err.message || "Could not load directory. Try again.");
       } finally {
@@ -92,9 +98,10 @@ export default function DirectoryPage() {
       }
     }, filters.q ? 250 : 0);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [status, filters, reloadKey]);
+  }, [status, filters, page, reloadKey]);
 
   const handleFilterChange = (key, val) => {
+    setPage(1);
     setFilters((prev) => ({ ...prev, [key]: val }));
   };
 
@@ -221,11 +228,11 @@ export default function DirectoryPage() {
 
           <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
             <span>
-              Showing <b>{profiles.length}</b> verified stakeholders
+              Showing <b>{profiles.length ? (page - 1) * 24 + 1 : 0}–{Math.min(page * 24, profilesTotal)}</b> of <b>{profilesTotal}</b> verified stakeholders
             </span>
             <button
               type="button"
-              onClick={() => setFilters({ role: "", skill: "", interest: "", department: "", q: "" })}
+              onClick={() => { setPage(1); setFilters({ role: "", skill: "", interest: "", department: "", q: "" }); }}
               className="text-[#c8102e] font-semibold hover:underline cursor-pointer"
             >
               Reset Filters
@@ -314,6 +321,15 @@ export default function DirectoryPage() {
               </article>
             ))}
           </div>
+        )}
+        {profilesTotal > 24 && (
+          <nav aria-label="Stakeholder directory pages" className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-xs text-slate-500">Page {page} of {totalPages}</span>
+            <div className="flex gap-2">
+              <Button variant="secondary" size="sm" disabled={page <= 1 || loading} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>
+              <Button variant="secondary" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next</Button>
+            </div>
+          </nav>
         )}
       </div>
     </KQAppShell>

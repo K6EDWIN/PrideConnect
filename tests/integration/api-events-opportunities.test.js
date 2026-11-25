@@ -5,7 +5,13 @@ import { getServerSession } from "next-auth/next";
 import { prisma } from "@/lib/prisma";
 import { sendAppEmail } from "@/lib/gmail";
 
+const deferredAfter = vi.hoisted(() => ({ callback: null }));
+
 vi.mock("next-auth/next", () => ({ getServerSession: vi.fn() }));
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, after: vi.fn((callback) => { deferredAfter.callback = callback; }) };
+});
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/lib/audit-log", () => ({ logActivity: vi.fn() }));
 vi.mock("@/lib/gmail", () => ({ GMAIL_SENDER: "sender@example.com", sendAppEmail: vi.fn() }));
@@ -28,6 +34,7 @@ function post(url, body) {
 describe("event and opportunity publishing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    deferredAfter.callback = null;
     getServerSession.mockResolvedValue({ user: { id: "member-1" } });
   });
 
@@ -51,6 +58,7 @@ describe("event and opportunity publishing", () => {
       bannerUrl: "https://example.public.blob.vercel-storage.com/banner.webp",
     }));
     const data = await response.json();
+    await deferredAfter.callback?.();
 
     expect(response.status).toBe(201);
     expect(prisma.event.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -63,11 +71,11 @@ describe("event and opportunity publishing", () => {
       bcc: ["one@example.com", "two@example.com"],
       subject: "New event posted: Aviation Careers Evening",
     }));
-    expect(data.announcement).toEqual({ sent: true, recipientCount: 2 });
+    expect(data.announcement).toEqual({ queued: true });
     expect(data.event.bannerUrl).toBe("https://example.public.blob.vercel-storage.com/banner.webp");
   });
 
-  it("keeps the event published and reports a failed email announcement", async () => {
+  it("keeps the event published and logs a failed background announcement", async () => {
     process.env.APP_URL = "https://prideconnect.example";
     prisma.event.create.mockResolvedValue({ id: "event-2", title: "Community Forum", description: null, location: null, bannerUrl: null, eventDate: new Date("2026-12-01T15:00:00.000Z") });
     prisma.user.findMany.mockResolvedValue([{ email: "one@example.com" }]);
@@ -77,10 +85,14 @@ describe("event and opportunity publishing", () => {
       title: "Community Forum", eventDate: "2026-12-01T15:00:00.000Z",
     }));
     const data = await response.json();
+    const loggedError = vi.spyOn(console, "error").mockImplementation(() => {});
+    await deferredAfter.callback?.();
 
     expect(response.status).toBe(201);
     expect(data.event.id).toBe("event-2");
-    expect(data.announcement.failed).toBe(true);
+    expect(data.announcement).toEqual({ queued: true });
+    expect(loggedError).toHaveBeenCalled();
+    loggedError.mockRestore();
   });
 
   it("publishes an opportunity through its existing workflow", async () => {

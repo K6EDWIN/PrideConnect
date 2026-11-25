@@ -44,31 +44,39 @@ export async function GET(request, { params }) {
 
   const url = new URL(request.url);
   const beforeId = url.searchParams.get("before");
+  const afterId = url.searchParams.get("after");
   let cursorMessage = null;
-  if (beforeId) {
+  const cursorId = beforeId || afterId;
+  if (cursorId) {
     cursorMessage = await prisma.message.findFirst({
-      where: { id: beforeId, conversationId: id },
+      where: { id: cursorId, conversationId: id },
       select: { id: true, createdAt: true },
     });
     if (!cursorMessage) return NextResponse.json({ error: "Message cursor is invalid" }, { status: 400 });
   }
 
   const where = { conversationId: id };
-  if (cursorMessage) {
+  if (cursorMessage && beforeId) {
     where.OR = [
       { createdAt: { lt: cursorMessage.createdAt } },
       { createdAt: cursorMessage.createdAt, id: { lt: cursorMessage.id } },
     ];
   }
+  if (cursorMessage && afterId) {
+    where.OR = [
+      { createdAt: { gt: cursorMessage.createdAt } },
+      { createdAt: cursorMessage.createdAt, id: { gt: cursorMessage.id } },
+    ];
+  }
   const rows = await prisma.message.findMany({
     where,
     include: { sender: { select: { id: true, profile: { select: { fullName: true } } } } },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    orderBy: [{ createdAt: afterId ? "asc" : "desc" }, { id: afterId ? "asc" : "desc" }],
     take: 101,
   });
   const hasMore = rows.length > 100;
   const page = rows.slice(0, 100);
-  const messages = page.reverse();
+  const messages = afterId ? page : page.reverse();
   return NextResponse.json({
     conversation: access.conversation,
     messages,

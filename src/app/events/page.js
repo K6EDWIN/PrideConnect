@@ -15,6 +15,10 @@ export default function EventsPage() {
   const router = useRouter();
 
   const [events, setEvents] = useState([]);
+  const [eventsTotal, setEventsTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [eventsReloadKey, setEventsReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
@@ -36,7 +40,6 @@ export default function EventsPage() {
   const [search, setSearch] = useState("");
   const [timeFilter, setTimeFilter] = useState("upcoming");
   const [formatFilter, setFormatFilter] = useState("");
-  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -47,21 +50,26 @@ export default function EventsPage() {
   useEffect(() => {
     if (status !== "authenticated") return;
 
-    async function load() {
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
       try {
-        const res = await fetch("/api/events");
+        const params = new URLSearchParams({ q: search, time: timeFilter, format: formatFilter, page: String(page) });
+        const res = await fetch(`/api/events?${params}`, { signal: controller.signal });
         const data = await readApiResponse(res, "Could not load events");
 
         setEvents(data.events || []);
+        setEventsTotal(data.total || 0);
+        setTotalPages(data.totalPages || 1);
         setLoading(false);
       } catch (err) {
-        setError(err.message);
-        setLoading(false);
+        if (err.name !== "AbortError") {
+          setError(err.message);
+          setLoading(false);
+        }
       }
-    }
-
-    load();
-  }, [status]);
+    }, search ? 220 : 0);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [status, search, timeFilter, formatFilter, page, eventsReloadKey]);
 
   useEffect(() => {
     if (!events.length || typeof window === "undefined") return;
@@ -117,25 +125,14 @@ export default function EventsPage() {
 
       setPosting(false);
 
-      setEvents((prev) =>
-        [
-          {
-            ...data.event,
-            createdByName: "You",
-            participantCount: 0,
-            isJoined: false,
-            isPast: false,
-          },
-          ...prev,
-        ].sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate))
-      );
+      setSearch("");
+      setTimeFilter("upcoming");
+      setFormatFilter("");
+      setPage(1);
+      setEventsReloadKey((key) => key + 1);
       setForm({ title: "", description: "", location: "", eventDate: "", bannerUrl: "" });
       setBannerName("");
-      setPostNotice(data.announcement?.failed
-        ? `Event published, but its email announcement was incomplete (${data.announcement.recipientCount} of ${data.announcement.totalRecipients} sent). Check the email settings and contact an administrator to notify remaining members.`
-        : data.announcement?.recipientCount
-        ? `Event published. Email announcement sent to ${data.announcement.recipientCount} members.`
-        : "Event published. There were no other active members to notify.");
+      setPostNotice("Event published. Member email announcements are being sent in the background.");
     } catch (err) {
       setPosting(false);
       setPostError(err.message);
@@ -177,17 +174,7 @@ export default function EventsPage() {
     }
   };
 
-  const filteredEvents = events.filter((event) => {
-    const query = search.trim().toLowerCase();
-    const matchesSearch = !query || [event.title, event.description, event.location, event.createdByName]
-      .some((value) => String(value || "").toLowerCase().includes(query));
-    const eventIsPast = Boolean(event.isPast);
-    const matchesTime = timeFilter === "all" || (timeFilter === "past" ? eventIsPast : !eventIsPast);
-    const isOnline = /online|virtual|teams|zoom/i.test(event.location || "");
-    const matchesFormat = !formatFilter || (formatFilter === "online" ? isOnline : !isOnline);
-    return matchesSearch && matchesTime && matchesFormat;
-  });
-  const visibleEvents = showAll ? filteredEvents : filteredEvents.slice(0, 6);
+  const visibleEvents = events;
 
   if (status === "loading" || loading) {
     return (
@@ -341,19 +328,19 @@ export default function EventsPage() {
                 <h2 className="text-2xl font-bold text-slate-900">Events Available</h2>
                 <p className="mt-1 text-sm text-slate-600">Find upcoming aviation events, view details, and RSVP.</p>
               </div>
-              <span className="text-sm font-semibold text-slate-600">{filteredEvents.length} {filteredEvents.length === 1 ? "event" : "events"}</span>
+              <span className="text-sm font-semibold text-slate-600">{eventsTotal} {eventsTotal === 1 ? "event" : "events"}</span>
             </div>
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Community Events ({filteredEvents.length})
+                Community Events ({eventsTotal})
               </span>
-              {events.length > 6 && <button type="button" onClick={() => setShowAll((value) => !value)} className="text-sm font-semibold text-[#c8102e] hover:underline">{showAll ? "Show fewer" : `View all ${filteredEvents.length}`}</button>}
+              {totalPages > 1 && <span className="text-xs font-semibold text-slate-500">Page {page} of {totalPages}</span>}
             </div>
 
             <div className="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
-              <input aria-label="Search events" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search event, topic, or location…" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 sm:col-span-2" />
-              <select aria-label="Filter events by date" value={timeFilter} onChange={(event) => { setTimeFilter(event.target.value); setShowAll(false); }} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="upcoming">Upcoming events</option><option value="past">Past events</option><option value="all">All dates</option></select>
-              <select aria-label="Filter by event format" value={formatFilter} onChange={(event) => setFormatFilter(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="">All formats</option><option value="inperson">In person</option><option value="online">Online</option></select>
+              <input aria-label="Search events" type="search" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Search event, topic, or location…" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 sm:col-span-2" />
+              <select aria-label="Filter events by date" value={timeFilter} onChange={(event) => { setPage(1); setTimeFilter(event.target.value); }} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="upcoming">Upcoming events</option><option value="past">Past events</option><option value="all">All dates</option></select>
+              <select aria-label="Filter by event format" value={formatFilter} onChange={(event) => { setPage(1); setFormatFilter(event.target.value); }} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="">All formats</option><option value="inperson">In person</option><option value="online">Online</option></select>
             </div>
 
             {rsvpError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{rsvpError}</p>}
@@ -362,10 +349,10 @@ export default function EventsPage() {
               <p className="text-red-600 text-sm">{error}</p>
             ) : events.length === 0 ? (
               <div className="p-12 text-center card text-slate-500">
-                No events scheduled yet. Create an event to gather peers and mentees!
+                {search || formatFilter || timeFilter !== "upcoming"
+                  ? "No events match these filters. Try a different search or date range."
+                  : "No upcoming events are scheduled yet. Create an event to gather peers and mentees!"}
               </div>
-            ) : filteredEvents.length === 0 ? (
-              <div className="card p-8 text-center text-sm text-slate-600">No events match these filters. Try a different search or date range.</div>
             ) : (
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 {visibleEvents.map((e) => {
@@ -432,6 +419,10 @@ export default function EventsPage() {
                 })}
               </div>
             )}
+            {totalPages > 1 && <nav aria-label="Event pages" className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>
+              <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next</Button>
+            </nav>}
           </section>
         </div>
       </div>

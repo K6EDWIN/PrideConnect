@@ -60,6 +60,15 @@ export default function AdminPage() {
   const [stats, setStats] = useState(null);
   const [benchmark, setBenchmark] = useState(null);
   const [users, setUsers] = useState([]);
+  const [usersTotal, setUsersTotal] = useState(0);
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersTotalPages, setUsersTotalPages] = useState(1);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState("");
+  const [usersRetry, setUsersRetry] = useState(0);
+  const [benchmarkLoading, setBenchmarkLoading] = useState(false);
+  const [benchmarkError, setBenchmarkError] = useState("");
+  const [benchmarkRetry, setBenchmarkRetry] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pendingUserId, setPendingUserId] = useState(null);
@@ -131,30 +140,9 @@ export default function AdminPage() {
 
     async function load() {
       try {
-        const [statsRes, usersRes, evalRes] = await Promise.all([
-          fetch("/api/admin/stats"),
-          fetch("/api/admin/users"),
-          fetch("/api/admin/evaluation"),
-        ]);
-        const [statsData, usersData, evalData] = await Promise.all([
-          readApiJson(statsRes, "Could not load admin statistics"),
-          readApiJson(usersRes, "Could not load stakeholder accounts"),
-          readApiJson(evalRes, "Could not load model evaluation"),
-        ]);
-
-        if (!statsRes.ok || !usersRes.ok) {
-          setError(statsData.error || usersData.error || "Could not load admin console data");
-          setLoading(false);
-          return;
-        }
-
+        const statsRes = await fetch("/api/admin/stats");
+        const statsData = await readApiJson(statsRes, "Could not load admin statistics");
         setStats(statsData);
-        const userList = usersData.users || [];
-        setUsers(userList);
-
-        if (evalData.benchmark) {
-          setBenchmark(evalData.benchmark);
-        }
         setLoading(false);
       } catch (err) {
         setError(err.message);
@@ -164,6 +152,55 @@ export default function AdminPage() {
 
     load();
   }, [status, session]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || session?.user?.role !== "ADMIN" || activeTab !== "model") return undefined;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setBenchmarkLoading(true);
+      setBenchmarkError("");
+      fetch("/api/admin/evaluation", { signal: controller.signal })
+        .then((response) => readApiJson(response, "Could not load model evaluation"))
+        .then((data) => setBenchmark(data.benchmark || null))
+        .catch((loadError) => {
+          if (loadError.name !== "AbortError") setBenchmarkError(loadError.message || "Could not load model evaluation");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setBenchmarkLoading(false);
+        });
+    }, 0);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [status, session?.user?.role, activeTab, benchmarkRetry]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || session?.user?.role !== "ADMIN" || activeTab !== "stakeholders") return undefined;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setUsersLoading(true);
+      setUsersError("");
+      try {
+        const query = new URLSearchParams({
+          q: userSearch,
+          role: roleFilter,
+          status: statusFilter,
+          page: String(usersPage),
+        });
+        const response = await fetch(`/api/admin/users?${query}`, { signal: controller.signal });
+        const data = await readApiJson(response, "Could not load stakeholder accounts");
+        setUsers(data.users || []);
+        setUsersTotal(data.total || 0);
+        setUsersTotalPages(data.totalPages || 1);
+      } catch (loadError) {
+        if (loadError.name !== "AbortError") setUsersError(loadError.message || "Could not load stakeholder accounts");
+      } finally {
+        if (!controller.signal.aborted) setUsersLoading(false);
+      }
+    }, userSearch ? 180 : 0);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [status, session?.user?.role, activeTab, userSearch, roleFilter, statusFilter, usersPage, usersRetry]);
 
   useEffect(() => {
     if (status !== "authenticated" || session?.user?.role !== "ADMIN" || activeTab !== "recommender") return undefined;
@@ -383,48 +420,20 @@ export default function AdminPage() {
   };
 
   // Filtered Users
-  const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
-      const q = userSearch.toLowerCase();
-      const matchesSearch =
-        !userSearch ||
-        u.email?.toLowerCase().includes(q) ||
-        u.profile?.fullName?.toLowerCase().includes(q) ||
-        u.profile?.department?.toLowerCase().includes(q);
-
-      const matchesRole = roleFilter === "ALL" || u.role === roleFilter;
-
-      let matchesStatus = true;
-      if (statusFilter === "VERIFIED") matchesStatus = u.isVerified && !u.isSuspended;
-      if (statusFilter === "UNVERIFIED") matchesStatus = !u.isVerified && !u.isSuspended;
-      if (statusFilter === "SUSPENDED") matchesStatus = u.isSuspended;
-
-      return matchesSearch && matchesRole && matchesStatus;
-    });
-  }, [users, userSearch, roleFilter, statusFilter]);
-
-  // Role Counts for Quick Filter Chips
-  const countsByRole = useMemo(() => {
-    const map = { ALL: users.length };
-    users.forEach((u) => {
-      map[u.role] = (map[u.role] || 0) + 1;
-    });
-    return map;
-  }, [users]);
+  const countsByRole = stats?.usersByRole || {};
 
   if (status === "loading" || loading) {
     return (
-      <div className="admin-loading-screen min-h-screen text-slate-100 flex items-center justify-center p-6 font-sans">
-        <div className="admin-loading-content text-center max-w-md space-y-4">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-white/10 text-[#c8102e] flex items-center justify-center border border-white/15 animate-pulse">
-            <Icon name="sparkles" size={28} />
+      <div className="admin-loading-screen" role="status" aria-live="polite" aria-label="Loading administrator workspace">
+        <div className="admin-loading-content">
+          <div className="admin-loading-mark" aria-hidden="true">
+            <span className="admin-loading-spinner" />
+            <span className="admin-loading-sparkle"><Icon name="sparkles" size={21} /></span>
           </div>
-          <h2 className="text-xl font-bold text-white tracking-tight">
-            Kenya Airways Flight Operations Intelligence
-          </h2>
-          <p className="text-xs text-slate-400">
-            Loading stakeholder records and calculating the prototype ranking diagnostics...
-          </p>
+          <p className="admin-loading-eyebrow">PRIDECONNECT · ADMIN WORKSPACE</p>
+          <h2>Preparing your workspace</h2>
+          <p className="admin-loading-description">Loading secure account and platform information. Large directories load only when you open them.</p>
+          <div className="admin-loading-track" aria-hidden="true"><span /></div>
         </div>
       </div>
     );
@@ -580,7 +589,7 @@ export default function AdminPage() {
           <Icon name="directory" size={14} className={activeTab === "stakeholders" ? "text-[#c8102e]" : ""} />
           <span>Stakeholder Governance</span>
           <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 text-[10px] font-mono">
-            {users.length}
+            {stats?.totalUsers ?? "—"}
           </span>
         </button>
 
@@ -742,6 +751,12 @@ export default function AdminPage() {
         {/* ============================================================ */}
         {activeTab === "model" && (
           <div className="space-y-8">
+            {(benchmarkLoading || benchmarkError) && (
+              <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${benchmarkError ? "border-rose-200 bg-rose-50 text-rose-800" : "border-sky-200 bg-sky-50 text-sky-900"}`} role={benchmarkError ? "alert" : "status"}>
+                <span>{benchmarkError || "Loading model evaluation metrics…"}</span>
+                {benchmarkError && <Button size="sm" variant="secondary" onClick={() => setBenchmarkRetry((value) => value + 1)}>Retry evaluation</Button>}
+              </div>
+            )}
             {/* Executive Health Cards */}
             <div className="admin-kpi-grid grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               <div className="p-5 bg-white border border-slate-200/80 rounded-2xl shadow-xs">
@@ -1413,6 +1428,7 @@ export default function AdminPage() {
         {/* ============================================================ */}
         {activeTab === "stakeholders" && (
           <div className="space-y-6">
+            {usersError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{usersError}</span><Button size="sm" variant="secondary" onClick={() => setUsersRetry((value) => value + 1)}>Retry directory</Button></div>}
             <section className="p-6 sm:p-8 bg-white border border-slate-200/80 rounded-2xl shadow-xs space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div>
@@ -1430,13 +1446,13 @@ export default function AdminPage() {
                     <input
                       placeholder="Search name, email, department..."
                       value={userSearch}
-                      onChange={(e) => setUserSearch(e.target.value)}
+                      onChange={(e) => { setUsersPage(1); setUserSearch(e.target.value); }}
                       className="pl-3 pr-8 py-2 bg-white border border-slate-300 rounded-xl text-xs outline-none focus:border-[#c8102e] w-full sm:w-64"
                     />
                     {userSearch && (
                       <button
                         type="button"
-                        onClick={() => setUserSearch("")}
+                        onClick={() => { setUsersPage(1); setUserSearch(""); }}
                         className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs"
                       >
                         ✕
@@ -1459,7 +1475,7 @@ export default function AdminPage() {
                   <button
                     key={f.key}
                     type="button"
-                    onClick={() => setRoleFilter(f.key)}
+                    onClick={() => { setUsersPage(1); setRoleFilter(f.key); }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition border ${roleFilter === f.key
                         ? "bg-[#071626] text-white border-[#071626]"
                         : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
@@ -1467,7 +1483,7 @@ export default function AdminPage() {
                   >
                     <span>{f.label}</span>
                     <span className="ml-1.5 opacity-70 font-mono text-[11px]">
-                      ({countsByRole[f.key] || 0})
+                      ({f.key === "ALL" ? (stats?.totalUsers || 0) : (countsByRole[f.key] || 0)})
                     </span>
                   </button>
                 ))}
@@ -1480,7 +1496,7 @@ export default function AdminPage() {
                   <button
                     key={st}
                     type="button"
-                    onClick={() => setStatusFilter(st)}
+                    onClick={() => { setUsersPage(1); setStatusFilter(st); }}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${statusFilter === st
                         ? "bg-slate-200 text-slate-900 font-bold"
                         : "text-slate-500 hover:text-slate-800"
@@ -1493,7 +1509,7 @@ export default function AdminPage() {
                   </button>
                 ))}
                 <span className="ml-auto text-[11px] text-slate-400">
-                  Showing {filteredUsers.length} of {users.length} stakeholders
+                  {usersLoading ? "Updating directory…" : `Showing ${users.length ? (usersPage - 1) * 50 + 1 : 0}–${Math.min(usersPage * 50, usersTotal)} of ${usersTotal} stakeholders`}
                 </span>
               </div>
 
@@ -1510,7 +1526,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredUsers.map((u) => {
+                    {users.map((u) => {
                       const name = u.profile?.fullName || "Unregistered Profile";
                       const dept = u.profile?.department || "Unassigned";
                       const role = ROLE_LABELS[u.role] || u.role;
@@ -1600,8 +1616,22 @@ export default function AdminPage() {
                         </tr>
                       );
                     })}
+                    {!usersLoading && !usersError && users.length === 0 && (
+                      <tr><td colSpan={5} className="px-4 py-12 text-center text-sm text-slate-500">No stakeholders match these filters.</td></tr>
+                    )}
+                    {usersLoading && users.length === 0 && (
+                      <tr><td colSpan={5} className="px-4 py-12 text-center text-sm text-slate-500"><span className="inline-flex items-center gap-2"><span className="admin-inline-spinner" aria-hidden="true" />Loading stakeholder records…</span></td></tr>
+                    )}
                   </tbody>
                 </table>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs text-slate-500">Showing up to 50 records per page for faster browsing.</span>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="secondary" disabled={usersPage <= 1 || usersLoading} onClick={() => setUsersPage((page) => Math.max(1, page - 1))}>Previous</Button>
+                  <span className="min-w-20 text-center text-xs font-semibold text-slate-600">Page {usersPage} of {usersTotalPages}</span>
+                  <Button size="sm" variant="secondary" disabled={usersPage >= usersTotalPages || usersLoading} onClick={() => setUsersPage((page) => Math.min(usersTotalPages, page + 1))}>Next</Button>
+                </div>
               </div>
             </section>
           </div>

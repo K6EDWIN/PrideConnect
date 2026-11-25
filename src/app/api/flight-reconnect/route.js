@@ -44,39 +44,31 @@ export async function GET() {
     flight.consentToShare && flight.flightNumber && flight.origin && flight.destination
   );
 
-  const matches = [];
-  for (const flight of consentedFlights) {
-    const others = await prisma.flightReconnect.findMany({
-      where: {
-        flightRoute: flight.flightRoute,
-        travelDate: flight.travelDate,
-        consentToShare: true,
-        userId: { not: session.user.id },
-        user: { isVerified: true, isSuspended: false, isDeleted: false, isDemo: false, role: { not: "ADMIN" } },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            role: true,
-            profile: { select: { fullName: true, department: true } },
-          },
-        },
-      },
-    });
-
-    for (const other of others) {
-      matches.push({
-        ...parseFlightRoute(flight.flightRoute),
-        flightRoute: flight.flightRoute,
-        travelDate: flight.travelDate,
-        userId: other.user.id,
-        role: other.user.role,
-        fullName: other.user.profile?.fullName || "Member",
-        department: other.user.profile?.department || null,
-      });
-    }
-  }
+  const flightPairs = [...new Map(consentedFlights.map((flight) => [
+    `${flight.flightRoute}:${flight.travelDate.toISOString()}`,
+    { flightRoute: flight.flightRoute, travelDate: flight.travelDate },
+  ])).values()];
+  const others = flightPairs.length ? await prisma.flightReconnect.findMany({
+    where: {
+      OR: flightPairs.map(({ flightRoute, travelDate }) => ({ flightRoute, travelDate })),
+      consentToShare: true,
+      userId: { not: session.user.id },
+      user: { isVerified: true, isSuspended: false, isDeleted: false, isDemo: false, role: { not: "ADMIN" } },
+    },
+    include: { user: { select: { id: true, role: true, profile: { select: { fullName: true, department: true } } } } },
+  }) : [];
+  const pairKeys = new Set(flightPairs.map(({ flightRoute, travelDate }) => `${flightRoute}:${travelDate.toISOString()}`));
+  const matches = others
+    .filter((other) => pairKeys.has(`${other.flightRoute}:${other.travelDate.toISOString()}`))
+    .map((other) => ({
+      ...parseFlightRoute(other.flightRoute),
+      flightRoute: other.flightRoute,
+      travelDate: other.travelDate,
+      userId: other.user.id,
+      role: other.user.role,
+      fullName: other.user.profile?.fullName || "Member",
+      department: other.user.profile?.department || null,
+    }));
 
   const peerIds = [...new Set(matches.map((match) => match.userId))];
   const [connectionRequests, mentorshipRequests] = peerIds.length

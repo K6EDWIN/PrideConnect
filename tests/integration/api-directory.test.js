@@ -11,6 +11,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     profile: {
       findMany: vi.fn(),
+      count: vi.fn().mockResolvedValue(1),
     },
   },
 }));

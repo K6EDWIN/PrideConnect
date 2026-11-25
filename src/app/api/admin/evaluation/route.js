@@ -15,6 +15,7 @@ import { adminApiErrorResponse } from "@/lib/admin-api-error";
 import { withNcfRankingSignal } from "@/lib/ncf-ranking";
 
 const BENCHMARK_SAMPLE_SIZE = 150;
+const EVALUATION_HISTORY_LIMIT = 10000;
 const eligibleProfileWhere = {
   user: { isVerified: true, isSuspended: false, isDeleted: false, isDemo: false },
 };
@@ -240,18 +241,22 @@ export async function GET(req) {
       prisma.mentorshipRequest.findMany({
         where: { status: "ACCEPTED", sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
         select: { senderId: true, receiverId: true },
+        orderBy: { createdAt: "desc" }, take: EVALUATION_HISTORY_LIMIT,
       }),
       prisma.connectionRequest.findMany({
         where: { status: "ACCEPTED", sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
         select: { senderId: true, receiverId: true },
+        orderBy: { createdAt: "desc" }, take: EVALUATION_HISTORY_LIMIT,
       }),
       prisma.mentorshipRequest.findMany({
         where: { status: { in: ["ACCEPTED", "DECLINED"] }, sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
         select: { status: true, modelFeatures: true, createdAt: true },
+        orderBy: { createdAt: "desc" }, take: EVALUATION_HISTORY_LIMIT,
       }),
       prisma.connectionRequest.findMany({
         where: { status: { in: ["ACCEPTED", "DECLINED"] }, sender: { is: { isDemo: false, isDeleted: false } }, receiver: { is: { isDemo: false, isDeleted: false } } },
         select: { status: true, modelFeatures: true, createdAt: true },
+        orderBy: { createdAt: "desc" }, take: EVALUATION_HISTORY_LIMIT,
       }),
       prisma.feedback.findMany({
         where: {
@@ -266,6 +271,8 @@ export async function GET(req) {
           createdAt: true,
           mentorshipRequest: { select: { createdAt: true, recommendationId: true } },
         },
+        orderBy: { createdAt: "desc" },
+        take: EVALUATION_HISTORY_LIMIT,
       }),
       prisma.mLModelArtifact.findMany({
         where: { OR: [{ active: true }, { type: "NCF" }] },
@@ -278,7 +285,8 @@ export async function GET(req) {
           owner: { is: { isDemo: false, isDeleted: false } },
           recommendation: { is: { matchedUser: { is: { isDemo: false, isDeleted: false } } } },
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" },
+        take: EVALUATION_HISTORY_LIMIT,
         select: {
           ownerId: true,
           recommendationId: true,
@@ -663,6 +671,7 @@ export async function GET(req) {
         total: relevanceFeedback.length,
         useful: relevanceFeedback.filter((row) => row.rating >= 4).length,
         notUseful: relevanceFeedback.filter((row) => row.rating <= 2).length,
+        evaluationWindow: `Most recent ${EVALUATION_HISTORY_LIMIT} rows per history source`,
       },
       weights: {
         alpha: Math.round(hybridWeights.alpha * 100),
