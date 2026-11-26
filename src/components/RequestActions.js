@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Icon } from "@/components/KQIcons";
 import { readApiResponse } from "@/lib/read-api-response";
@@ -11,7 +12,7 @@ const ENDPOINTS = {
 
 /**
  * Send-a-request action buttons for connecting or requesting mentorship.
- * Used across Directory and Recommendations pages.
+ * Used on stakeholder directory cards.
  * Supports receiverId, userId, or id props interchangeably.
  */
 export default function RequestActions({
@@ -19,6 +20,8 @@ export default function RequestActions({
   receiverId,
   id,
   mentorshipRole,
+  connectionStatus = "NONE",
+  onConnectionStatusChange,
 }) {
   const targetId = receiverId || userId || id;
 
@@ -48,10 +51,22 @@ export default function RequestActions({
         }),
       });
 
-      await readApiResponse(res, "Could not send request");
+      if (kind === "connection" && res.status === 409) {
+        const conflict = await res.clone().json().catch(() => null);
+        if (conflict?.incomingRequest) {
+          onConnectionStatusChange?.(targetId, "PENDING_RECEIVED");
+          setPendingKind(null);
+          return;
+        }
+      }
+      const data = await readApiResponse(res, "Could not send request");
       setPendingKind(null);
-
-      setSentKinds((s) => ({ ...s, [kind]: true }));
+      if (kind === "connection") {
+        const nextStatus = data.connectionRequest?.status === "ACCEPTED" ? "ACCEPTED" : "PENDING_SENT";
+        onConnectionStatusChange?.(targetId, nextStatus);
+      } else {
+        setSentKinds((s) => ({ ...s, [kind]: true }));
+      }
     } catch (err) {
       setPendingKind(null);
       setError(err.message || "Could not send request. Please try again.");
@@ -91,30 +106,39 @@ export default function RequestActions({
         </button>
 
         {/* Connect Button */}
-        <button
-          type="button"
-          onClick={() => send("connection")}
-          disabled={sentKinds.connection || pendingKind === "connection"}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium flex items-center justify-center gap-1.5 transition cursor-pointer flex-1 sm:flex-initial border ${
-            sentKinds.connection
-              ? "bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default"
-              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-60 shadow-xs"
-          }`}
-        >
-          {sentKinds.connection ? (
-            <>
-              <Icon name="check" size={13} />
-              <span>Connected</span>
-            </>
-          ) : pendingKind === "connection" ? (
-            <span>Connecting...</span>
-          ) : (
-            <>
-              <Icon name="sparkles" size={13} />
-              <span>Connect</span>
-            </>
-          )}
-        </button>
+        {connectionStatus === "PENDING_RECEIVED" ? (
+          <Link href="/requests" className="text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition flex-1 sm:flex-initial border bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100">
+            <span>Review request</span>
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => send("connection")}
+            disabled={["ACCEPTED", "PENDING_SENT"].includes(connectionStatus) || pendingKind === "connection"}
+            className={`text-xs px-3 py-1.5 rounded-lg font-medium flex items-center justify-center gap-1.5 transition cursor-pointer flex-1 sm:flex-initial border ${
+              connectionStatus === "ACCEPTED"
+                ? "bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default"
+                : connectionStatus === "PENDING_SENT"
+                ? "bg-amber-50 text-amber-800 border-amber-200 cursor-default"
+                : connectionStatus === "DECLINED"
+                ? "bg-white text-slate-700 border-slate-300 hover:bg-slate-50 hover:border-slate-400 shadow-xs"
+                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-60 shadow-xs"
+            }`}
+            title={connectionStatus === "PENDING_SENT" ? "Waiting for this member to respond" : connectionStatus === "DECLINED" ? "The previous request was declined. You may send a new request." : undefined}
+          >
+            {pendingKind === "connection" ? (
+              <span>Sending request...</span>
+            ) : connectionStatus === "ACCEPTED" ? (
+              <><Icon name="check" size={13} /><span>Connected</span></>
+            ) : connectionStatus === "PENDING_SENT" ? (
+              <><Icon name="check" size={13} /><span>Request sent</span></>
+            ) : connectionStatus === "DECLINED" ? (
+              <><Icon name="sparkles" size={13} /><span>Connect again</span></>
+            ) : (
+              <><Icon name="sparkles" size={13} /><span>Connect</span></>
+            )}
+          </button>
+        )}
       </div>
 
       {error && (

@@ -27,11 +27,12 @@ const ROLE_OPTIONS = [
 ];
 
 export default function DirectoryPage() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
 
   const [meta, setMeta] = useState({ skills: [], interests: [] });
   const [profiles, setProfiles] = useState([]);
+  const [connectionStatuses, setConnectionStatuses] = useState({});
   const [profilesTotal, setProfilesTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -60,6 +61,33 @@ export default function DirectoryPage() {
       .then(setMeta)
       .catch(() => {});
   }, [status]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let active = true;
+    fetch("/api/connection-requests")
+      .then((response) => readApiResponse(response, "Could not load connection statuses"))
+      .then(({ sent = [], received = [] }) => {
+        if (!active) return;
+        const next = {};
+        const priority = { DECLINED: 1, PENDING_SENT: 2, PENDING_RECEIVED: 3, ACCEPTED: 4 };
+        const record = (userId, value) => {
+          if (!userId || (priority[value] || 0) < (priority[next[userId]] || 0)) return;
+          next[userId] = value;
+        };
+        sent.forEach((request) => record(request.receiverId, {
+          PENDING: "PENDING_SENT", ACCEPTED: "ACCEPTED", DECLINED: "DECLINED",
+        }[request.status] || "NONE"));
+        received.forEach((request) => record(request.senderId, {
+          PENDING: "PENDING_RECEIVED", ACCEPTED: "ACCEPTED", DECLINED: "DECLINED",
+        }[request.status] || "NONE"));
+        setConnectionStatuses(next);
+      })
+      .catch(() => {
+        if (active) setConnectionStatuses({});
+      });
+    return () => { active = false; };
+  }, [status, session?.user?.id, reloadKey]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -315,6 +343,8 @@ export default function DirectoryPage() {
                     receiverId={p.userId}
                     userId={p.userId}
                     mentorshipRole={p.mentorshipRole}
+                    connectionStatus={connectionStatuses[p.userId] || "NONE"}
+                    onConnectionStatusChange={(userId, nextStatus) => setConnectionStatuses((current) => ({ ...current, [userId]: nextStatus }))}
                   />
                   <ReportButton targetType="USER" targetId={p.userId} />
                 </div>
