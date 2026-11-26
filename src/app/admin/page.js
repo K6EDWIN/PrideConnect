@@ -82,6 +82,11 @@ export default function AdminPage() {
   const [adminInviteMessage, setAdminInviteMessage] = useState("");
   const [adminInviteError, setAdminInviteError] = useState("");
   const [adminAccessActionId, setAdminAccessActionId] = useState(null);
+  const [notificationDelivery, setNotificationDelivery] = useState(null);
+  const [notificationDeliveryLoading, setNotificationDeliveryLoading] = useState(false);
+  const [notificationRetrying, setNotificationRetrying] = useState(false);
+  const [notificationDeliveryError, setNotificationDeliveryError] = useState("");
+  const [notificationDeliveryNotice, setNotificationDeliveryNotice] = useState("");
   const [auditLogs, setAuditLogs] = useState({ logs: [], total: 0, totalPages: 1 });
   const [auditPage, setAuditPage] = useState(1);
   const [auditActor, setAuditActor] = useState("ALL");
@@ -90,6 +95,11 @@ export default function AdminPage() {
   const [auditError, setAuditError] = useState("");
   const [selectedAudit, setSelectedAudit] = useState(null);
   const [reports, setReports] = useState([]);
+  const [reportsTotal, setReportsTotal] = useState(0);
+  const [reportsPage, setReportsPage] = useState(1);
+  const [reportsTotalPages, setReportsTotalPages] = useState(1);
+  const [reportsSearch, setReportsSearch] = useState("");
+  const [reportStatus, setReportStatus] = useState("OPEN");
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState("");
   const [reportActionId, setReportActionId] = useState(null);
@@ -244,31 +254,66 @@ export default function AdminPage() {
     }
   }, []);
 
+  const loadNotificationDelivery = useCallback(async () => {
+    setNotificationDeliveryLoading(true);
+    setNotificationDeliveryError("");
+    try {
+      const response = await fetch("/api/admin/notification-delivery", { cache: "no-store" });
+      const data = await readApiJson(response, "Could not load notification email delivery status");
+      setNotificationDelivery(data);
+    } catch (err) {
+      setNotificationDeliveryError(err.message || "Could not load notification email delivery status");
+    } finally {
+      setNotificationDeliveryLoading(false);
+    }
+  }, []);
+
+  const retryNotificationEmails = useCallback(async () => {
+    setNotificationRetrying(true);
+    setNotificationDeliveryError("");
+    setNotificationDeliveryNotice("");
+    try {
+      const response = await fetch("/api/admin/notification-delivery", { method: "POST" });
+      const data = await readApiJson(response, "Could not queue notification email retries");
+      setNotificationDeliveryNotice(`${data.resetCount} email ${data.resetCount === 1 ? "delivery has" : "deliveries have"} been queued for processing.`);
+      await loadNotificationDelivery();
+    } catch (err) {
+      setNotificationDeliveryError(err.message || "Could not queue notification email retries");
+    } finally {
+      setNotificationRetrying(false);
+    }
+  }, [loadNotificationDelivery]);
+
   useEffect(() => {
     if (status === "authenticated" && session?.user?.role === "ADMIN" && activeTab === "admins") {
       Promise.resolve().then(loadAdminAccess);
+      Promise.resolve().then(loadNotificationDelivery);
     }
-  }, [status, session?.user?.role, activeTab, loadAdminAccess]);
+  }, [status, session?.user?.role, activeTab, loadAdminAccess, loadNotificationDelivery]);
 
   const loadReports = useCallback(async () => {
     setReportsLoading(true);
     setReportsError("");
     try {
-      const response = await fetch("/api/admin/reports");
+      const query = new URLSearchParams({ page: String(reportsPage), pageSize: "25", status: reportStatus, q: reportsSearch });
+      const response = await fetch(`/api/admin/reports?${query}`);
       const data = await readApiJson(response, "Could not load reports");
       setReports(data.reports || []);
+      setReportsTotal(data.total || 0);
+      setReportsTotalPages(data.totalPages || 1);
     } catch (loadError) {
       setReportsError(loadError.message || "Could not load reports");
     } finally {
       setReportsLoading(false);
     }
-  }, []);
+  }, [reportsPage, reportsSearch, reportStatus]);
 
   useEffect(() => {
     if (status === "authenticated" && session?.user?.role === "ADMIN" && activeTab === "reports") {
-      Promise.resolve().then(loadReports);
+      const timer = setTimeout(loadReports, reportsSearch ? 180 : 0);
+      return () => clearTimeout(timer);
     }
-  }, [status, session?.user?.role, activeTab, loadReports]);
+  }, [status, session?.user?.role, activeTab, loadReports, reportsSearch]);
 
   const reviewReport = async (report, action) => {
     setReportActionId(report.id);
@@ -280,7 +325,8 @@ export default function AdminPage() {
         body: JSON.stringify({ reportId: report.id, action }),
       });
       const data = await readApiJson(response, "Could not review report");
-      await loadReports();
+      if (reports.length === 1 && reportsPage > 1) setReportsPage((page) => page - 1);
+      else await loadReports();
     } catch (actionError) {
       setReportsError(actionError.message || "Could not review report");
     } finally {
@@ -603,7 +649,7 @@ export default function AdminPage() {
         >
           <Icon name="shield" size={14} className={activeTab === "reports" ? "text-[#c8102e]" : ""} />
           <span>Community Reports</span>
-          {reports.length > 0 && <span className="rounded-full bg-rose-700 px-1.5 text-[10px] text-white">{reports.length}</span>}
+          {reportsTotal > 0 && <span className="rounded-full bg-rose-700 px-1.5 text-[10px] text-white">{reportsTotal.toLocaleString()}</span>}
         </button>
 
         <button
@@ -711,16 +757,26 @@ export default function AdminPage() {
         {activeTab === "reports" && (
           <section className="space-y-4">
             {reportsError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{reportsError}</span><Button size="sm" variant="secondary" onClick={loadReports} disabled={reportsLoading}>{reportsLoading ? "Retrying…" : "Retry"}</Button></div>}
+            <div className="card grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_220px_auto] sm:items-center">
+              <label htmlFor="community-report-search" className="sr-only">Search community reports</label>
+              <input id="community-report-search" type="search" value={reportsSearch} onChange={(event) => { setReportsPage(1); setReportsSearch(event.target.value); }} placeholder="Search reporter, reason, details, or reference" className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-500" />
+              <label className="sr-only" htmlFor="community-report-status">Filter reports by status</label>
+              <select id="community-report-status" value={reportStatus} onChange={(event) => { setReportsPage(1); setReportStatus(event.target.value); }} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900">
+                <option value="OPEN">Open reports</option><option value="ACTIONED">Actioned</option><option value="DISMISSED">Dismissed</option><option value="ALL">All statuses</option>
+              </select>
+              <span className="text-sm text-slate-600">{reportsTotal} {reportsTotal === 1 ? "report" : "reports"}</span>
+            </div>
             {reportsLoading ? (
               <div className="card p-8 text-center text-sm text-slate-500">Loading community reports...</div>
             ) : reportsError ? null : reports.length === 0 ? (
-              <div className="card p-10 text-center text-sm text-slate-500">There are no open community reports.</div>
+              <div className="card p-10 text-center text-sm text-slate-500">{reportsSearch || reportStatus !== "OPEN" ? "No reports match these filters." : "There are no open community reports."}</div>
             ) : reports.map((report) => (
               <article key={report.id} className="card p-5">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-full bg-rose-50 px-2.5 py-1 text-[10px] font-bold uppercase text-rose-800">{report.targetType}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${report.status === "OPEN" ? "bg-amber-50 text-amber-900" : report.status === "ACTIONED" ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>{report.status.replaceAll("_", " ")}</span>
                       <span className="text-sm font-bold text-slate-900">{report.reason.replaceAll("_", " ")}</span>
                       <span className="text-xs text-slate-500">{new Date(report.createdAt).toLocaleString()}</span>
                     </div>
@@ -731,18 +787,29 @@ export default function AdminPage() {
                     {report.description && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{report.description}</p>}
                     <p className="mt-2 break-all text-[10px] text-slate-400">Target reference: {report.targetId}</p>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    {report.targetType === "USER" && (
-                      <Button size="sm" variant="secondary" disabled={reportActionId === report.id} onClick={() => reviewReport(report, "SUSPEND_USER")}>Suspend user</Button>
-                    )}
-                    {["EVENT", "OPPORTUNITY"].includes(report.targetType) && (
-                      <Button size="sm" variant="secondary" disabled={reportActionId === report.id} onClick={() => reviewReport(report, "HIDE_CONTENT")}>Hide content</Button>
-                    )}
-                    <Button size="sm" disabled={reportActionId === report.id} onClick={() => reviewReport(report, "DISMISS")}>Dismiss</Button>
-                  </div>
+                  {report.status === "OPEN" ? (
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      {report.targetType === "USER" && (
+                        <Button size="sm" variant="secondary" disabled={reportActionId === report.id} onClick={() => reviewReport(report, "SUSPEND_USER")}>Suspend user</Button>
+                      )}
+                      {["EVENT", "OPPORTUNITY"].includes(report.targetType) && (
+                        <Button size="sm" variant="secondary" disabled={reportActionId === report.id} onClick={() => reviewReport(report, "HIDE_CONTENT")}>Hide content</Button>
+                      )}
+                      <Button size="sm" disabled={reportActionId === report.id} onClick={() => reviewReport(report, "DISMISS")}>Dismiss</Button>
+                    </div>
+                  ) : (
+                    <p className="shrink-0 text-xs text-slate-500">Reviewed{report.moderator?.profile?.fullName ? ` by ${report.moderator.profile.fullName}` : ""}{report.moderatorNote ? ` · ${report.moderatorNote}` : ""}</p>
+                  )}
                 </div>
               </article>
             ))}
+            {reportsTotal > 0 && <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-xs text-slate-500">Page {reportsPage} of {reportsTotalPages}</span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" disabled={reportsPage <= 1 || reportsLoading} onClick={() => setReportsPage((page) => page - 1)}>Previous</Button>
+                <Button size="sm" variant="secondary" disabled={reportsPage >= reportsTotalPages || reportsLoading} onClick={() => setReportsPage((page) => page + 1)}>Next</Button>
+              </div>
+            </div>}
           </section>
         )}
 
@@ -1463,7 +1530,7 @@ export default function AdminPage() {
               </div>
 
               {/* Quick Persona Filter Chips */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <div className="flex flex-wrap items-center gap-2 pb-1" role="group" aria-label="Filter stakeholders by persona">
                 {[
                   { key: "ALL", label: "All Stakeholders" },
                   { key: "STAFF", label: "Active Staff" },
@@ -1475,6 +1542,7 @@ export default function AdminPage() {
                   <button
                     key={f.key}
                     type="button"
+                    aria-pressed={roleFilter === f.key}
                     onClick={() => { setUsersPage(1); setRoleFilter(f.key); }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition border ${roleFilter === f.key
                         ? "bg-[#071626] text-white border-[#071626]"
@@ -1490,39 +1558,42 @@ export default function AdminPage() {
               </div>
 
               {/* Status Filter */}
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span className="font-semibold text-slate-700">Filter Standing:</span>
-                {["ALL", "VERIFIED", "UNVERIFIED", "SUSPENDED"].map((st) => (
-                  <button
-                    key={st}
-                    type="button"
-                    onClick={() => { setUsersPage(1); setStatusFilter(st); }}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${statusFilter === st
-                        ? "bg-slate-200 text-slate-900 font-bold"
-                        : "text-slate-500 hover:text-slate-800"
-                      }`}
-                  >
-                    {st === "ALL" && "All Statuses"}
-                    {st === "VERIFIED" && "Verified Only"}
-                    {st === "UNVERIFIED" && "Pending Verification"}
-                    {st === "SUSPENDED" && "Suspended Only"}
-                  </button>
-                ))}
-                <span className="ml-auto text-[11px] text-slate-400">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span className="font-semibold text-slate-700">Filter standing:</span>
+                <div className="flex flex-wrap items-center gap-1">
+                  {["ALL", "VERIFIED", "UNVERIFIED", "SUSPENDED"].map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      aria-pressed={statusFilter === st}
+                      onClick={() => { setUsersPage(1); setStatusFilter(st); }}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${statusFilter === st
+                          ? "bg-slate-200 text-slate-900 font-bold"
+                          : "text-slate-500 hover:text-slate-800"
+                        }`}
+                    >
+                      {st === "ALL" && "All Statuses"}
+                      {st === "VERIFIED" && "Verified Only"}
+                      {st === "UNVERIFIED" && "Pending Verification"}
+                      {st === "SUSPENDED" && "Suspended Only"}
+                    </button>
+                  ))}
+                </div>
+                <span className="ml-auto text-[11px] text-slate-400 sm:text-right">
                   {usersLoading ? "Updating directory…" : `Showing ${users.length ? (usersPage - 1) * 50 + 1 : 0}–${Math.min(usersPage * 50, usersTotal)} of ${usersTotal} stakeholders`}
                 </span>
               </div>
 
               {/* Table */}
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="w-full text-left text-xs">
+              <div className="overflow-x-auto rounded-xl border border-slate-200" role="region" aria-label="Stakeholder directory results" tabIndex={0}>
+                <table className="w-full min-w-[1080px] table-fixed text-left text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider font-bold">
-                      <th className="py-3 px-4">Stakeholder</th>
-                      <th className="py-3 px-4">Persona</th>
-                      <th className="py-3 px-4">Department / Unit</th>
-                      <th className="py-3 px-4 text-center">Status</th>
-                      <th className="py-3 px-4 text-right">Administrative Actions</th>
+                      <th className="w-[30%] py-3 px-4">Stakeholder</th>
+                      <th className="w-[13%] py-3 px-4">Persona</th>
+                      <th className="w-[21%] py-3 px-4">Department / Unit</th>
+                      <th className="w-[13%] py-3 px-4 text-center">Status</th>
+                      <th className="w-[23%] py-3 px-4 text-right">Administrative Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1537,20 +1608,20 @@ export default function AdminPage() {
                           <td className="py-3.5 px-4">
                             <div className="flex items-center gap-3">
                               <Avatar name={name} size="sm" />
-                              <div>
+                              <div className="min-w-0">
                                 <b className="text-slate-900 block text-xs font-bold">{name}</b>
-                                <span className="text-[11px] text-slate-500">{u.email}</span>
+                                <span className="block break-all text-[11px] text-slate-500">{u.email}</span>
                               </div>
                             </div>
                           </td>
 
                           <td className="py-3.5 px-4">
-                            <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border ${ROLE_COLORS[u.role] || "bg-slate-100 text-slate-700"}`}>
+                            <span className={`inline-block whitespace-nowrap text-[10px] font-semibold px-2.5 py-0.5 rounded-full border ${ROLE_COLORS[u.role] || "bg-slate-100 text-slate-700"}`}>
                               {role}
                             </span>
                           </td>
 
-                          <td className="py-3.5 px-4 text-slate-600 text-xs">
+                          <td className="py-3.5 px-4 break-words text-slate-600 text-xs">
                             {dept}
                           </td>
 
@@ -1571,7 +1642,7 @@ export default function AdminPage() {
                           </td>
 
                           <td className="py-3.5 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                            <div className="flex flex-wrap items-center justify-end gap-1.5">
                               {u.isVerified ? (
                                 <button
                                   type="button"
@@ -1639,6 +1710,32 @@ export default function AdminPage() {
 
         {activeTab === "admins" && (
           <div className="space-y-6">
+            <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs sm:p-6" aria-labelledby="notification-delivery-title">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 id="notification-delivery-title" className="text-base font-bold text-slate-900">Member notification email delivery</h3>
+                  <p className="mt-1 text-sm text-slate-600">In-app alerts are retained. Email delivery is tracked separately so queued or failed sends can be retried.</p>
+                </div>
+                <Button size="sm" variant="secondary" disabled={notificationRetrying || notificationDeliveryLoading || !((notificationDelivery?.counts?.FAILED || 0) + (notificationDelivery?.counts?.PENDING || 0))} onClick={retryNotificationEmails}>
+                  {notificationRetrying ? "Queueing emails…" : `Process queue (${(notificationDelivery?.counts?.FAILED || 0) + (notificationDelivery?.counts?.PENDING || 0)})`}
+                </Button>
+              </div>
+              {notificationDeliveryLoading && !notificationDelivery ? (
+                <p className="mt-4 text-sm text-slate-500">Loading delivery status…</p>
+              ) : notificationDelivery && (
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+                  {[ ["PENDING", "Pending"], ["PROCESSING", "Sending"], ["SENT", "Sent"], ["FAILED", "Failed"], ["SKIPPED", "Skipped"] ].map(([key, label]) => (
+                    <div key={key} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</span>
+                      <b className="mt-1 block text-xl text-slate-900">{notificationDelivery.counts?.[key] || 0}</b>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {notificationDeliveryNotice && <p role="status" className="mt-3 text-sm text-emerald-800">{notificationDeliveryNotice}</p>}
+              {notificationDeliveryError && <p role="alert" className="mt-3 text-sm text-red-700">{notificationDeliveryError}</p>}
+            </section>
+
             <section className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs sm:p-8">
               <div className="mb-6 flex items-start gap-4 border-b border-slate-100 pb-5">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#c8102e]">

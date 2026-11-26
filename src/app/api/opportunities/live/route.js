@@ -5,6 +5,8 @@ import { authOptions } from "@/lib/auth";
 const API_BASE = "https://api-irec-prod.kenya-airways.com/api";
 const CAREERS_BASE = "https://careers.kenya-airways.com";
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+const CAREER_PAGE_SIZE = 100;
+const MAX_CAREER_PAGES = 5;
 
 function plainText(value) {
   return String(value || "")
@@ -79,16 +81,42 @@ export async function GET() {
   try {
     // The careers website itself is a JavaScript app. Its public job cards are
     // populated from this JSON service, not embedded in the page HTML.
-    const [listingData, divisionData, locationData] = await Promise.all([
-      fetchJson(`${API_BASE}/Jobs/JobListing?Status=1&page=1&pageSize=100`),
+    const [firstListingPage, divisionData, locationData] = await Promise.all([
+      fetchJson(`${API_BASE}/Jobs/JobListing?Status=1&page=1&pageSize=${CAREER_PAGE_SIZE}`),
       fetchJson(`${API_BASE}/ERPData/divisions`),
       fetchJson(`${API_BASE}/ERPData/locations`),
     ]);
     const divisions = namedRecords(divisionData, "divisionID", "divisionName");
     const locations = namedRecords(locationData, "locationId", "locationName");
-    const jobs = Array.isArray(listingData?.data) ? listingData.data : [];
+    const firstJobs = Array.isArray(firstListingPage?.data) ? firstListingPage.data : [];
+    const declaredCount = firstListingPage?.totalCount ?? firstListingPage?.totalRecords ?? firstListingPage?.totalItems ?? firstListingPage?.meta?.totalCount;
+    const declaredPages = Number(
+      firstListingPage?.totalPages
+      ?? firstListingPage?.pagination?.totalPages
+      ?? firstListingPage?.meta?.totalPages
+      ?? (declaredCount != null ? Math.ceil(Number(declaredCount) / CAREER_PAGE_SIZE) : 0),
+    );
+    const pageCount = Math.min(MAX_CAREER_PAGES, Math.max(1,
+      Number.isFinite(declaredPages) && declaredPages > 1
+        ? Math.ceil(declaredPages)
+        : firstJobs.length >= CAREER_PAGE_SIZE ? MAX_CAREER_PAGES : 1,
+    ));
+    const laterPages = pageCount > 1
+      ? await Promise.all(Array.from({ length: pageCount - 1 }, (_, index) =>
+        fetchJson(`${API_BASE}/Jobs/JobListing?Status=1&page=${index + 2}&pageSize=${CAREER_PAGE_SIZE}`),
+      ))
+      : [];
+    const finalPageJobs = Array.isArray(laterPages.at(-1)?.data) ? laterPages.at(-1).data : firstJobs;
+    const feedTruncated = (Number.isFinite(declaredPages) && declaredPages > pageCount)
+      || (!(Number.isFinite(declaredPages) && declaredPages > 0) && finalPageJobs.length >= CAREER_PAGE_SIZE);
+    const jobs = [...new Map(
+      [firstJobs, ...laterPages.map((page) => Array.isArray(page?.data) ? page.data : [])]
+        .flat()
+        .filter((job) => job?.id)
+        .map((job) => [job.id, job]),
+    ).values()];
     const opportunities = jobs.map((job) => toOpportunity(job, divisions, locations)).filter(Boolean);
-    return NextResponse.json({ opportunities, source: "Kenya Airways Careers", refreshedAt: new Date().toISOString() });
+    return NextResponse.json({ opportunities, source: "Kenya Airways Careers", refreshedAt: new Date().toISOString(), pagesFetched: pageCount, feedTruncated });
   } catch (error) {
     console.error("Kenya Airways Careers feed could not be refreshed:", error);
     return NextResponse.json({ error: "Kenya Airways Careers listings are temporarily unavailable. Please try again shortly." }, { status: 502 });

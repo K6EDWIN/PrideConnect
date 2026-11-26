@@ -18,6 +18,11 @@ export default function FrequentFlyerReviewsPage() {
   const { status, data: session } = useSession();
   const router = useRouter();
   const [reviews, setReviews] = useState([]);
+  const [reviewsTotal, setReviewsTotal] = useState(0);
+  const [reviewsPage, setReviewsPage] = useState(1);
+  const [reviewsTotalPages, setReviewsTotalPages] = useState(1);
+  const [search, setSearch] = useState("");
+  const [retry, setRetry] = useState(0);
   const [notes, setNotes] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -28,24 +33,29 @@ export default function FrequentFlyerReviewsPage() {
 
   const loadReviews = useCallback(async () => {
     setError("");
+    setLoading(true);
     try {
-      const response = await fetch("/api/admin/frequent-flyers", { cache: "no-store" });
+      const params = new URLSearchParams({ page: String(reviewsPage), q: search });
+      const response = await fetch(`/api/admin/frequent-flyers?${params}`, { cache: "no-store" });
       const data = await readApiResponse(response, "Could not load Asante member reviews");
       setReviews(data.reviews || []);
+      setReviewsTotal(data.total || 0);
+      setReviewsTotalPages(data.totalPages || 1);
     } catch (loadError) {
       setError(loadError.message || "Could not load Asante member reviews.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [reviewsPage, search]);
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/login");
     if (status === "authenticated" && session?.user?.role !== "ADMIN") router.replace("/recommendations");
     if (status === "authenticated" && session?.user?.role === "ADMIN") {
-      Promise.resolve().then(loadReviews);
+      const timer = setTimeout(loadReviews, search ? 180 : 0);
+      return () => clearTimeout(timer);
     }
-  }, [status, session?.user?.role, router, loadReviews]);
+  }, [status, session?.user?.role, router, loadReviews, search, retry]);
 
   async function reviewRecord(review, reviewStatus) {
     const reviewNote = notes[review.id]?.trim() || "";
@@ -63,11 +73,12 @@ export default function FrequentFlyerReviewsPage() {
         body: JSON.stringify({ status: reviewStatus, reviewNote }),
       });
       const data = await readApiResponse(response, "Could not save the membership review");
-      setReviews((current) => current.filter((item) => item.id !== review.id));
       setEvidenceById((current) => { const next = { ...current }; delete next[review.id]; return next; });
       setNotice(data.notificationSent
         ? "Review saved and the member was emailed."
         : "Review saved. The member email could not be sent; check email service settings.");
+      if (reviews.length === 1 && reviewsPage > 1) setReviewsPage((page) => page - 1);
+      else await loadReviews();
     } catch (reviewError) {
       setError(reviewError.message || "Could not save the membership review.");
     } finally {
@@ -105,19 +116,24 @@ export default function FrequentFlyerReviewsPage() {
           <strong>Manual records check required.</strong> PrideConnect is not connected to Kenya Airways or Asante Rewards verification systems. Reviewers must check details using records they are authorized to access. Do not mark an account confirmed based only on the information submitted here.
         </div>
 
-        {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><span>{error}</span><Button variant="secondary" onClick={loadReviews}>Retry</Button></div>}
+        {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><span>{error}</span><Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>Retry</Button></div>}
         {notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</p>}
+
+        <section className="card grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <label htmlFor="flyer-review-search" className="sr-only">Search pending frequent flyer reviews</label>
+          <input id="flyer-review-search" type="search" value={search} onChange={(event) => { setReviewsPage(1); setSearch(event.target.value); }} placeholder="Search member name, email, or department" className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-500" />
+          <span className="text-sm text-slate-600">{reviewsTotal} pending {reviewsTotal === 1 ? "review" : "reviews"}</span>
+        </section>
 
         {loading ? (
           <div className="card p-10 text-center text-slate-500"><Icon name="flight" size={24} className="mx-auto mb-2 animate-pulse text-[#c8102e]" />Loading private review requests…</div>
         ) : reviews.length === 0 ? (
           <div className="card p-10 text-center">
-            <h2 className="font-bold text-slate-900">No pending reviews</h2>
-            <p className="mt-1 text-sm text-slate-600">New Asante member review requests will appear here after registration.</p>
+            <h2 className="font-bold text-slate-900">{search ? "No reviews match this search" : "No pending reviews"}</h2>
+            <p className="mt-1 text-sm text-slate-600">{search ? "Try a different name, email, or department." : "New Asante member review requests will appear here after registration."}</p>
           </div>
         ) : (
           <div className="space-y-4">
-            <p className="text-sm font-semibold text-slate-700">{reviews.length} pending {reviews.length === 1 ? "review" : "reviews"}</p>
             {reviews.map((review) => {
               const evidence = evidenceById[review.id];
               const pending = savingId === review.id;
@@ -158,6 +174,13 @@ export default function FrequentFlyerReviewsPage() {
                 </article>
               );
             })}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              <span className="text-xs text-slate-500">Page {reviewsPage} of {reviewsTotalPages}</span>
+              <div className="flex gap-2">
+                <Button variant="secondary" disabled={reviewsPage <= 1 || loading} onClick={() => setReviewsPage((page) => page - 1)}>Previous</Button>
+                <Button variant="secondary" disabled={reviewsPage >= reviewsTotalPages || loading} onClick={() => setReviewsPage((page) => page + 1)}>Next</Button>
+              </div>
+            </div>
           </div>
         )}
       </div>
