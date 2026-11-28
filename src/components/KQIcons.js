@@ -96,6 +96,12 @@ export function Icon({ name, size = 18, className = "" }) {
         <path d="m9 12 2 2 4-5" />
       </>
     ),
+    upload: (
+      <>
+        <path d="M12 16V4m0 0L7 9m5-5 5 5" />
+        <path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" />
+      </>
+    ),
     sparkles: (
       <>
         <path d="m12 3 1.4 3.6L17 8l-3.6 1.4L12 13l-1.4-3.6L7 8l3.6-1.4ZM5 15l.8 2.2L8 18l-2.2.8L5 21l-.8-2.2L2 18l2.2-.8Z" />

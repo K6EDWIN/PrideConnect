@@ -80,3 +80,287 @@ html[data-view-mode="classic"] .admin-console main textarea {
     transition-duration: .01ms !important;
   }
 }
+
+/* Give the admin identity and sign-out actions the same comfortable spacing
+   as the standalone profile header, without forcing the toolbar to overflow. */
+@media (min-width: 1025px) {
+  .admin-console .admin-header-actions {
+    gap: clamp(12px, 1vw, 18px) !important;
+  }
+
+  .admin-console .admin-header-actions .admin-profile-link {
+    min-height: 48px;
+    gap: 10px;
+    margin-left: 2px;
+    padding-inline: 14px !important;
+  }
+
+  .admin-console .admin-header-actions .admin-signout {
+    min-height: 48px;
+    gap: 8px;
+    margin-left: 2px;
+    padding-inline: 16px !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .admin-console .admin-header-actions .admin-profile-link,
+  .admin-console .admin-header-actions .admin-signout {
+    min-height: 42px;
+    flex-shrink: 0;
+  }
+}
+
+.profile-hero {
+  overflow: hidden;
+  border-radius: 20px;
+  background: #fff;
+}
+.profile-cover {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  min-height: clamp(170px, 21vw, 240px);
+  align-items: flex-start;
+  justify-content: flex-end;
+  overflow: hidden;
+  background-color: #0b2239;
+  background-image: linear-gradient(118deg, #071626 4%, #123252 58%, #1e4771 100%);
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+.profile-cover::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(5, 20, 35, .15), transparent 58%), linear-gradient(0deg, rgba(5, 20, 35, .24), transparent 45%);
+  content: "";
+  pointer-events: none;
+}
+.profile-cover-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.profile-cover-upload,
+.profile-cover-preview-label {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  margin: 16px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, .42);
+  border-radius: 999px;
+  background: rgba(7, 22, 38, .76);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+.profile-cover-upload:hover { background: #c8102e; }
+.profile-cover-preview-label {
+  margin-right: auto;
+  cursor: default;
+}
+.profile-identity-panel {
+  padding: 0 clamp(20px, 3vw, 36px) 22px;
+  background: #fff;
+}
+.profile-identity-main {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: clamp(16px, 2.2vw, 28px);
+  margin-top: -58px;
+}
+.profile-avatar-wrap {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 132px;
+  height: 132px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: visible;
+  border: 6px solid #fff;
+  border-radius: 50%;
+  background: #0e2740;
+  box-shadow: 0 5px 18px rgba(7, 22, 38, .22);
+}
+.profile-avatar-wrap .avatar {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 50%;
+  font-size: 34px;
+}
+.profile-avatar-edit {
+  position: absolute;
+  right: 1px;
+  bottom: 2px;
+  z-index: 3;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 3px solid white;
+  border-radius: 50%;
+  background: #c8102e;
+  color: white;
+  cursor: pointer;
+}
+.profile-avatar-edit:hover { background: #a30d25; }
+.profile-identity-copy { min-width: 0; padding: 0 0 8px; }
+.profile-identity-copy h1 {
+  margin: 0;
+  color: #071626;
+  font-size: clamp(25px, 3vw, 36px);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -.035em;
+  overflow-wrap: anywhere;
+}
+.profile-identity-copy .profile-email {
+  margin: 5px 0 0;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.profile-identity-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  color: #526176;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.profile-detail-separator { color: #c8102e; font-weight: 800; }
+.profile-access-badge {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  align-self: end;
+  margin-bottom: 10px;
+  padding: 0 14px;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.profile-access-badge.executive {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+.profile-media-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin: 16px 0 0 156px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e8f0;
+}
+.profile-media-group,
+.profile-cover-position {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.profile-media-button,
+.profile-media-save,
+.profile-media-cancel,
+.profile-media-remove {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #fff;
+  color: #17314c;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.profile-media-button:hover,
+.profile-media-cancel:hover { background: #f1f5f9; }
+.profile-media-save { border-color: #c8102e; background: #c8102e; color: #fff; }
+.profile-media-save:hover { background: #a30d25; }
+.profile-media-remove { border-color: #fecaca; color: #b91c1c; }
+.profile-media-remove:hover { background: #fef2f2; }
+.profile-media-button:disabled,
+.profile-media-save:disabled,
+.profile-media-remove:disabled { cursor: wait; opacity: .6; }
+.profile-cover-help { color: #64748b; font-size: 12px; }
+.profile-cover-position {
+  width: 100%;
+  justify-content: flex-start;
+  padding-top: 11px;
+  border-top: 1px solid #e2e8f0;
+}
+.profile-cover-position label { color: #475569; font-size: 11px; font-weight: 700; }
+.profile-cover-position input[type="range"] { width: min(120px, 25vw); min-height: 26px; accent-color: #c8102e; }
+html[data-view-mode="modern"] .profile-cover-position input[type="range"] {
+  min-height: 26px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-view-mode="modern"] .profile-hero,
+html[data-view-mode="modern"] .profile-identity-panel { background: #111925; }
+html[data-view-mode="modern"] .profile-identity-copy h1 { color: #f8fafc !important; }
+html[data-view-mode="modern"] .profile-identity-copy .profile-email { color: #dbe5f1 !important; }
+html[data-view-mode="modern"] .profile-identity-details { color: #c1cedd !important; }
+html[data-view-mode="modern"] .profile-media-controls,
+html[data-view-mode="modern"] .profile-cover-position { border-color: #2d4055; }
+html[data-view-mode="modern"] .profile-media-button,
+html[data-view-mode="modern"] .profile-media-cancel { border-color: #38516b; background: #0c1f33; color: #eff6ff; }
+html[data-view-mode="modern"] .profile-media-button:hover,
+html[data-view-mode="modern"] .profile-media-cancel:hover { background: #173553; }
+html[data-view-mode="modern"] .profile-cover-position label,
+html[data-view-mode="modern"] .profile-cover-help { color: #c1cedd; }
+html[data-view-mode="modern"] .profile-access-badge { background: rgba(16, 185, 129, .14); color: #6ee7b7; border-color: rgba(16, 185, 129, .4); }
+html[data-view-mode="classic"] .app-page .profile-identity-copy h1 { color: #071626 !important; }
+
+@media (max-width: 720px) {
+  .profile-cover { min-height: 160px; }
+  .profile-cover-upload,
+  .profile-cover-preview-label { min-height: 32px; margin: 9px; padding-inline: 10px; font-size: 10px; }
+  .profile-identity-panel { padding-inline: 16px; }
+  .profile-identity-main {
+    grid-template-columns: 76px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    margin-top: -40px;
+  }
+  .profile-avatar-wrap { width: 84px; height: 84px; border-width: 4px; }
+  .profile-avatar-edit { width: 29px; height: 29px; right: -1px; bottom: 0; }
+  .profile-identity-copy { padding: 34px 0 0; }
+  .profile-identity-copy h1 { font-size: clamp(21px, 6vw, 29px); }
+  .profile-identity-copy .profile-email { font-size: 12px; }
+  .profile-identity-details { gap: 5px; font-size: 11px; }
+  .profile-access-badge { grid-column: 2; justify-self: start; margin: -3px 0 0; min-height: 30px; }
+  .profile-media-controls { margin: 14px 0 0; padding-top: 12px; }
+  .profile-media-group { width: 100%; }
+  .profile-cover-position { gap: 6px; }
+  .profile-cover-position input[type="range"] { width: 68px; }
+}

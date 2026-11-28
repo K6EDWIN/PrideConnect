@@ -28,6 +28,8 @@ function LoginForm() {
   const [resending, setResending] = useState(false);
   const [twoFactorToken, setTwoFactorToken] = useState("");
   const [twoFactorMethod, setTwoFactorMethod] = useState("");
+  const [googlePhoto, setGooglePhoto] = useState("");
+  const [googlePhotoProof, setGooglePhotoProof] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [twoFactorNotice, setTwoFactorNotice] = useState("");
   const [twoFactorResending, setTwoFactorResending] = useState(false);
@@ -37,10 +39,14 @@ function LoginForm() {
     const params = new URLSearchParams(window.location.hash.slice(1));
     const token = params.get("twoFactorToken") || "";
     const method = params.get("method") || "AUTHENTICATOR";
+    const photo = params.get("googlePhoto") || "";
+    const photoProof = params.get("googlePhotoProof") || "";
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     queueMicrotask(() => {
       setTwoFactorToken(token);
       setTwoFactorMethod(method);
+      setGooglePhoto(photo);
+      setGooglePhotoProof(photoProof);
       setTwoFactorNotice(method === "EMAIL" ? "A sign-in code was sent to your registered email." : "Enter the current code from your authenticator app.");
     });
   }, []);
@@ -118,6 +124,7 @@ function LoginForm() {
       email,
       password,
       ...(twoFactorToken ? { twoFactorToken, twoFactorCode } : {}),
+      ...(googlePhoto && googlePhotoProof ? { googlePhoto, googlePhotoProof } : {}),
       redirect: false,
     });
 
@@ -159,6 +166,8 @@ function LoginForm() {
   const cancelTwoFactor = () => {
     setTwoFactorToken("");
     setTwoFactorMethod("");
+    setGooglePhoto("");
+    setGooglePhotoProof("");
     setTwoFactorCode("");
     setTwoFactorNotice("");
     setError("");

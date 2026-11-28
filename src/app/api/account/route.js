@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { del } from "@vercel/blob";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
@@ -23,6 +24,10 @@ export async function DELETE() {
   if (!user || user.isDeleted) {
     return NextResponse.json({ error: "Account is already unavailable" }, { status: 404 });
   }
+  const profileImages = await prisma.profile.findUnique({
+    where: { userId },
+    select: { avatarUrl: true, coverImageUrl: true },
+  });
   const replacementPasswordHash = await bcrypt.hash(randomBytes(48).toString("hex"), 10);
 
   await prisma.$transaction(async (tx) => {
@@ -50,6 +55,10 @@ export async function DELETE() {
         mentorshipRole: null,
         availability: null,
         isPublic: false,
+        avatarUrl: null,
+        coverImageUrl: null,
+        coverPositionX: 50,
+        coverPositionY: 50,
       },
     });
     await tx.profileSkill.deleteMany({ where: { profile: { is: { userId } } } });
@@ -68,6 +77,19 @@ export async function DELETE() {
     await tx.authSession.deleteMany({ where: { userId } });
     await tx.notification.deleteMany({ where: { userId } });
   });
+
+  if (process.env.BLOB_READ_WRITE_TOKEN || (process.env.VERCEL === "1" && process.env.BLOB_STORE_ID)) {
+    for (const imageUrl of [profileImages?.avatarUrl, profileImages?.coverImageUrl].filter(Boolean)) {
+      try {
+        const url = new URL(imageUrl);
+        if (url.protocol === "https:" && (url.hostname === "blob.vercel-storage.com" || url.hostname.endsWith(".blob.vercel-storage.com"))) {
+          await del(imageUrl);
+        }
+      } catch {
+        // Account anonymization and image removal should not fail due to Blob cleanup.
+      }
+    }
+  }
 
   await logActivity({
     actorId: userId,

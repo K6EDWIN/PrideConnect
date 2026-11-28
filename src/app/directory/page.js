@@ -299,7 +299,7 @@ export default function DirectoryPage() {
 
                   {/* Identity */}
                   <div className="flex items-start gap-3.5 mt-3.5">
-                    <Avatar name={p.fullName} size="lg" role={p.role} />
+                    <Avatar name={p.fullName} src={p.avatarUrl} size="lg" role={p.role} />
                     <div className="flex-1 min-w-0">
                       <h3 className="text-base font-bold text-slate-900 truncate">
                         {p.fullName}

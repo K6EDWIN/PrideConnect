@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DELETE } from "@/app/api/account/route";
 import { getServerSession } from "next-auth/next";
+import { del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 
 vi.mock("next-auth/next", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/lib/audit-log", () => ({ logActivity: vi.fn() }));
+vi.mock("@vercel/blob", () => ({ del: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: { findUnique: vi.fn() },
+    profile: { findUnique: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -27,6 +30,7 @@ describe("DELETE /api/account", () => {
   it("anonymizes personal data without deleting the referenced user record", async () => {
     getServerSession.mockResolvedValueOnce({ user: { id: "member-1", role: "STAFF" } });
     prisma.user.findUnique.mockResolvedValueOnce({ id: "member-1", isDeleted: false, role: "STAFF" });
+    prisma.profile.findUnique.mockResolvedValueOnce({ avatarUrl: null, coverImageUrl: null });
     const tx = {
       user: { update: vi.fn() },
       profile: { updateMany: vi.fn() },
@@ -49,6 +53,7 @@ describe("DELETE /api/account", () => {
     const data = await response.json();
 
     expect(response.status).toBe(200);
+    expect(del).not.toHaveBeenCalled();
     expect(data.message).toMatch(/anonymized/i);
     expect(tx.user.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "member-1" },
