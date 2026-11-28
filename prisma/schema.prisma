@@ -19,6 +19,16 @@ enum UserRole {
   ADMIN
 }
 
+enum TwoFactorMethod {
+  AUTHENTICATOR
+  EMAIL
+}
+
+enum TwoFactorPurpose {
+  LOGIN
+  SETUP
+}
+
 enum RequestStatus {
   PENDING
   ACCEPTED
@@ -88,6 +98,13 @@ model User {
   deletedAt     DateTime?
   passwordChangedAt DateTime?
   sessionVersion Int      @default(0)
+  twoFactorEnabled Boolean @default(false)
+  twoFactorMethod TwoFactorMethod?
+  twoFactorSecretEncrypted String?
+  twoFactorPendingSecretEncrypted String?
+  twoFactorSetupExpiresAt DateTime?
+  twoFactorLastCounter BigInt?
+  twoFactorSetupAttempts Int @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -117,6 +134,8 @@ model User {
   notifications Notification[]
   frequentFlyerVerification FrequentFlyerVerification? @relation("FrequentFlyerEvidence")
   frequentFlyerReviews FrequentFlyerVerification[] @relation("FrequentFlyerReviewer")
+  twoFactorChallenges TwoFactorChallenge[]
+  twoFactorRecoveryCodes TwoFactorRecoveryCode[]
 
   conversationsAsParticipantOne Conversation[] @relation("ConversationParticipantOne")
   conversationsAsParticipantTwo Conversation[] @relation("ConversationParticipantTwo")
@@ -412,6 +431,34 @@ model PasswordResetToken {
   user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt])
+}
+
+model TwoFactorChallenge {
+  id        String           @id @default(cuid())
+  userId    String
+  tokenHash String           @unique
+  purpose   TwoFactorPurpose
+  method    TwoFactorMethod
+  codeHash  String?
+  attempts  Int              @default(0)
+  resendCount Int            @default(0)
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, expiresAt])
+}
+
+model TwoFactorRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
 }
 
 model FrequentFlyerVerification {

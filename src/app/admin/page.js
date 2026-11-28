@@ -500,7 +500,7 @@ export default function AdminPage() {
           </p>
           <div className="pt-2">
             <Button onClick={() => router.push("/recommendations")} className="w-full">
-              Return to Stakeholder Portal
+              Open Member Recommendations
             </Button>
           </div>
         </div>
@@ -552,16 +552,6 @@ export default function AdminPage() {
                 </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab("recommender")}
-                className="admin-portal-link inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition"
-                title="Open the live member recommendation simulator"
-              >
-                <Icon name="sparkles" size={13} />
-                <span className="hidden sm:inline">Test Matches</span>
-              </button>
-
               <Link
                 href="/admin/profile"
                 className="admin-profile-link inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800/70 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition"
@@ -583,7 +573,7 @@ export default function AdminPage() {
               <details className="admin-classic-menu">
                 <summary><Avatar name={session?.user?.name || session?.user?.email} size="sm" role="ADMIN" /><span>Profile</span></summary>
                 <div className="admin-classic-menu-popover">
-                  <Link href="/recommendations">Stakeholder Portal</Link>
+                  <Link href="/recommendations">Member Recommendations</Link>
                   <Link href="/admin/profile">Admin Profile</Link>
                   <div className="admin-classic-menu-layout"><span>Layout</span><ViewModeToggle compact /></div>
                   <button type="button" onClick={() => signOut({ callbackUrl: "/login" })}>Log out</button>
@@ -691,7 +681,7 @@ export default function AdminPage() {
           <span>Audit Log</span>
         </button>
         <div className="admin-sidebar-footer">
-          <Link href="/recommendations" className="admin-sidebar-link"><Icon name="sparkles" size={15} /> Stakeholder Portal</Link>
+          <Link href="/recommendations" className="admin-sidebar-link" title="Open the member-facing recommendation experience"><Icon name="sparkles" size={15} /> Member Recommendations</Link>
           <Link href="/admin/profile" className="admin-sidebar-link"><Icon name="profile" size={15} /> Admin Profile</Link>
           <button type="button" className="admin-sidebar-link" onClick={() => signOut({ callbackUrl: "/login" })}><Icon name="logout" size={15} /> Log out</button>
         </div>

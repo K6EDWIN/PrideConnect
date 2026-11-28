@@ -232,6 +232,27 @@ describe("Authentication Hardening & Role Authorization Security", () => {
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
     });
 
+    it.each(["STAFF", "ADMIN"])("does not issue a session to a 2FA-enabled %s account from password-only credentials", async (role) => {
+      const credentialsProvider = authOptions.providers.find((p) => p.name === "Credentials");
+      prisma.user.findUnique.mockResolvedValueOnce({
+        id: "protected-member",
+        email: "protected@example.com",
+        passwordHash: await bcrypt.hash("validpassword", 10),
+        isVerified: true,
+        isSuspended: false,
+        isDeleted: false,
+        isDemo: false,
+        role,
+        twoFactorEnabled: true,
+        twoFactorMethod: "AUTHENTICATOR",
+        profile: { fullName: "Protected Member" },
+      });
+
+      await expect(credentialsProvider.options.authorize({ email: "protected@example.com", password: "validpassword" }))
+        .rejects.toThrow(/second verification step/i);
+      expect(prisma.adminAction.findFirst).not.toHaveBeenCalled();
+    });
+
     it("blocks Frequent Flyer sign-in while a membership review is pending", async () => {
       const credentialsProvider = authOptions.providers.find((p) => p.name === "Credentials");
       prisma.user.findUnique.mockResolvedValueOnce({

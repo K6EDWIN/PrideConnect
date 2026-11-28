@@ -7,6 +7,7 @@ import KQAppShell from "@/components/KQAppShell";
 import { Button, Avatar } from "@/components/KQBrand";
 import { Icon, GoogleIcon } from "@/components/KQIcons";
 import { readApiResponse } from "@/lib/read-api-response";
+import TwoFactorSettings from "@/components/TwoFactorSettings";
 import {
   AVAILABILITY_DAYS,
   buildAvailabilityText,
@@ -748,6 +749,9 @@ export default function ProfileEditor({ adminWorkspace = false, standalone = fal
             </Button>
           </div>
         </form>
+        <div className="mb-8">
+          <TwoFactorSettings />
+        </div>
         {!isAdmin && (
           <section className="card mb-8 border-red-200 p-6 sm:p-8">
             <h2 className="text-base font-bold text-red-900">Delete account</h2>
