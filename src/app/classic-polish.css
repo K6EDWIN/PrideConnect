@@ -113,14 +113,16 @@ html[data-view-mode="classic"] .admin-console main textarea {
 
 .profile-hero {
   overflow: hidden;
-  border-radius: 20px;
-  background: #fff;
+  border: 1px solid #d8e2ee;
+  border-radius: 22px;
+  background: #f8fafc;
+  box-shadow: 0 16px 38px rgba(10, 35, 60, .09);
 }
 .profile-cover {
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  min-height: clamp(170px, 21vw, 240px);
+  min-height: clamp(160px, 18vw, 214px);
   align-items: flex-start;
   justify-content: flex-end;
   overflow: hidden;
@@ -132,7 +134,7 @@ html[data-view-mode="classic"] .admin-console main textarea {
 .profile-cover::after {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, rgba(5, 20, 35, .15), transparent 58%), linear-gradient(0deg, rgba(5, 20, 35, .24), transparent 45%);
+  background: linear-gradient(115deg, rgba(5, 20, 35, .08), transparent 55%), linear-gradient(0deg, rgba(5, 20, 35, .3), transparent 48%);
   content: "";
   pointer-events: none;
 }
@@ -167,16 +169,19 @@ html[data-view-mode="classic"] .admin-console main textarea {
   cursor: default;
 }
 .profile-identity-panel {
-  padding: 0 clamp(20px, 3vw, 36px) 22px;
-  background: #fff;
+  padding: 0 clamp(20px, 3vw, 36px) 24px;
+  background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
 }
 .profile-identity-main {
   position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: end;
+  align-items: start;
   gap: clamp(16px, 2.2vw, 28px);
-  margin-top: -58px;
+  /* Keep identity text on the solid information panel. Only the portrait
+     overlaps the cover, so it can never make the name hard to read. */
+  min-height: 108px;
+  margin-top: 0;
 }
 .profile-avatar-wrap {
   position: relative;
@@ -187,10 +192,11 @@ html[data-view-mode="classic"] .admin-console main textarea {
   flex: 0 0 auto;
   place-items: center;
   overflow: visible;
-  border: 6px solid #fff;
+  border: 6px solid #f8fafc;
   border-radius: 50%;
   background: #0e2740;
-  box-shadow: 0 5px 18px rgba(7, 22, 38, .22);
+  box-shadow: 0 0 0 2px rgba(200, 16, 46, .24), 0 8px 24px rgba(7, 22, 38, .2);
+  transform: translateY(-58px);
 }
 .profile-avatar-wrap .avatar {
   width: 100%;
@@ -215,7 +221,7 @@ html[data-view-mode="classic"] .admin-console main textarea {
   cursor: pointer;
 }
 .profile-avatar-edit:hover { background: #a30d25; }
-.profile-identity-copy { min-width: 0; padding: 0 0 8px; }
+.profile-identity-copy { min-width: 0; padding: 16px 0 8px; }
 .profile-identity-copy h1 {
   margin: 0;
   color: #071626;
@@ -242,14 +248,24 @@ html[data-view-mode="classic"] .admin-console main textarea {
   font-size: 13px;
   line-height: 1.5;
 }
+.profile-identity-details > span:not(.profile-detail-separator) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 2px 9px;
+  border: 1px solid #dbe5ef;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #334155;
+}
 .profile-detail-separator { color: #c8102e; font-weight: 800; }
 .profile-access-badge {
   display: inline-flex;
   min-height: 36px;
   align-items: center;
   gap: 8px;
-  align-self: end;
-  margin-bottom: 10px;
+  align-self: start;
+  margin-top: 24px;
   padding: 0 14px;
   border: 1px solid #a7f3d0;
   border-radius: 999px;
@@ -326,10 +342,13 @@ html[data-view-mode="modern"] .profile-cover-position input[type="range"] {
 }
 
 html[data-view-mode="modern"] .profile-hero,
-html[data-view-mode="modern"] .profile-identity-panel { background: #111925; }
+html[data-view-mode="modern"] .profile-identity-panel { background: linear-gradient(180deg, #111925 0%, #0e1724 100%); }
+html[data-view-mode="modern"] .profile-hero { border-color: #2d4055; background: #111925; box-shadow: 0 16px 38px rgba(0, 0, 0, .22); }
+html[data-view-mode="modern"] .profile-avatar-wrap { border-color: #111925; }
 html[data-view-mode="modern"] .profile-identity-copy h1 { color: #f8fafc !important; }
 html[data-view-mode="modern"] .profile-identity-copy .profile-email { color: #dbe5f1 !important; }
 html[data-view-mode="modern"] .profile-identity-details { color: #c1cedd !important; }
+html[data-view-mode="modern"] .profile-identity-details > span:not(.profile-detail-separator) { border-color: #334a63; background: #15283b; color: #dbeafe; }
 html[data-view-mode="modern"] .profile-media-controls,
 html[data-view-mode="modern"] .profile-cover-position { border-color: #2d4055; }
 html[data-view-mode="modern"] .profile-media-button,
@@ -348,17 +367,18 @@ html[data-view-mode="classic"] .app-page .profile-identity-copy h1 { color: #071
   .profile-identity-panel { padding-inline: 16px; }
   .profile-identity-main {
     grid-template-columns: 76px minmax(0, 1fr);
-    align-items: center;
+    align-items: start;
     gap: 12px;
-    margin-top: -40px;
+    min-height: 106px;
+    margin-top: 0;
   }
-  .profile-avatar-wrap { width: 84px; height: 84px; border-width: 4px; }
+  .profile-avatar-wrap { width: 84px; height: 84px; border-width: 4px; transform: translateY(-38px); }
   .profile-avatar-edit { width: 29px; height: 29px; right: -1px; bottom: 0; }
-  .profile-identity-copy { padding: 34px 0 0; }
+  .profile-identity-copy { padding: 14px 0 0; }
   .profile-identity-copy h1 { font-size: clamp(21px, 6vw, 29px); }
   .profile-identity-copy .profile-email { font-size: 12px; }
   .profile-identity-details { gap: 5px; font-size: 11px; }
-  .profile-access-badge { grid-column: 2; justify-self: start; margin: -3px 0 0; min-height: 30px; }
+  .profile-access-badge { grid-column: 2; justify-self: start; margin: 0; min-height: 30px; }
   .profile-media-controls { margin: 14px 0 0; padding-top: 12px; }
   .profile-media-group { width: 100%; }
   .profile-cover-position { gap: 6px; }
