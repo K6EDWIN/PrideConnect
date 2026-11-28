@@ -26,6 +26,24 @@ function LoginForm() {
   const [googleAvailable, setGoogleAvailable] = useState(false);
   const [resendMessage, setResendMessage] = useState("");
   const [resending, setResending] = useState(false);
+  const [twoFactorToken, setTwoFactorToken] = useState("");
+  const [twoFactorMethod, setTwoFactorMethod] = useState("");
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [twoFactorNotice, setTwoFactorNotice] = useState("");
+  const [twoFactorResending, setTwoFactorResending] = useState(false);
+
+  useEffect(() => {
+    if (!window.location.hash.includes("twoFactorToken=")) return;
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const token = params.get("twoFactorToken") || "";
+    const method = params.get("method") || "AUTHENTICATOR";
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    queueMicrotask(() => {
+      setTwoFactorToken(token);
+      setTwoFactorMethod(method);
+      setTwoFactorNotice(method === "EMAIL" ? "A sign-in code was sent to your registered email." : "Enter the current code from your authenticator app.");
+    });
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -73,9 +91,33 @@ function LoginForm() {
     setError("");
     setLoading(true);
 
+    if (!twoFactorToken) {
+      try {
+        const response = await fetch("/api/auth/two-factor/challenge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await readApiResponse(response, "Could not start sign in");
+        if (data.requiresTwoFactor) {
+          setTwoFactorToken(data.challengeToken);
+          setTwoFactorMethod(data.method);
+          setTwoFactorNotice(data.method === "EMAIL" ? "A six-digit sign-in code was sent to your registered email. It expires in five minutes." : "Enter the current six-digit code from your authenticator app.");
+          setPassword("");
+          setLoading(false);
+          return;
+        }
+      } catch (challengeError) {
+        setLoading(false);
+        setError(challengeError.message);
+        return;
+      }
+    }
+
     const res = await signIn("credentials", {
       email,
       password,
+      ...(twoFactorToken ? { twoFactorToken, twoFactorCode } : {}),
       redirect: false,
     });
 
@@ -94,6 +136,32 @@ function LoginForm() {
     } else {
       router.push("/recommendations");
     }
+  };
+
+  const handleResendTwoFactor = async () => {
+    setTwoFactorResending(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/two-factor/resend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeToken: twoFactorToken }),
+      });
+      const data = await readApiResponse(response, "Could not resend the verification code");
+      setTwoFactorNotice(data.message || "A new code was sent.");
+    } catch (resendError) {
+      setError(resendError.message);
+    } finally {
+      setTwoFactorResending(false);
+    }
+  };
+
+  const cancelTwoFactor = () => {
+    setTwoFactorToken("");
+    setTwoFactorMethod("");
+    setTwoFactorCode("");
+    setTwoFactorNotice("");
+    setError("");
   };
 
   const handleGoogleSignIn = () => {
@@ -237,7 +305,7 @@ function LoginForm() {
               {urlError === "unverified" && <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Your email may still need verification. Enter the email used to register and resend the link below.</div>}
               {resendMessage && <p role="status" className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-700">{resendMessage}</p>}
 
-              {googleAvailable && (
+              {googleAvailable && !twoFactorToken && (
                 <>
                   <div className="mt-5">
                     <button
@@ -262,7 +330,7 @@ function LoginForm() {
 
               {/* Sign In Form */}
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
+                {!twoFactorToken && <><div>
                   <label htmlFor="login-email" className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Official Email / Membership ID
                   </label>
@@ -300,9 +368,21 @@ function LoginForm() {
                     className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-[#c8102e] focus:ring-2 focus:ring-[#c8102e]/10 transition text-slate-900 shadow-2xs"
                     required
                   />
-                </div>
+                </div></>}
 
-                <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 pt-1">
+                {twoFactorToken && <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Verify it’s you</h3>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-600">{twoFactorNotice}</p>
+                    <p className="mt-1 text-xs text-slate-500">You can enter a six-digit code or an unused recovery code.</p>
+                  </div>
+                  <label htmlFor="two-factor-code" className="block text-xs font-semibold text-slate-700">Verification or recovery code</label>
+                  <input id="two-factor-code" autoComplete="one-time-code" inputMode="text" value={twoFactorCode} onChange={(event) => setTwoFactorCode(event.target.value.trim())} maxLength={11} className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm tracking-wider text-slate-900 outline-none focus:border-[#c8102e] focus:ring-2 focus:ring-[#c8102e]/10" required />
+                  {twoFactorMethod === "EMAIL" && <button type="button" onClick={handleResendTwoFactor} disabled={twoFactorResending} className="text-xs font-semibold text-[#c8102e] hover:underline disabled:opacity-50">{twoFactorResending ? "Sending…" : "Resend email code"}</button>}
+                  <button type="button" onClick={cancelTwoFactor} className="ml-4 text-xs font-semibold text-slate-600 hover:text-slate-900">Use a different sign-in</button>
+                </div>}
+
+                {!twoFactorToken && <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 pt-1">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
@@ -316,18 +396,18 @@ function LoginForm() {
                     <Link href="/forgot-password" className="text-[#c8102e] hover:underline font-semibold">Forgot password?</Link>
                     <Link href="/register" className="text-[#c8102e] hover:underline font-semibold">Need an account?</Link>
                   </div>
-                </div>
+                </div>}
 
-                <button type="button" onClick={handleResendVerification} disabled={resending || !email.trim()} className="text-xs font-semibold text-[#c8102e] hover:underline disabled:cursor-not-allowed disabled:opacity-50">
+                {!twoFactorToken && <button type="button" onClick={handleResendVerification} disabled={resending || !email.trim()} className="text-xs font-semibold text-[#c8102e] hover:underline disabled:cursor-not-allowed disabled:opacity-50">
                   {resending ? "Sending…" : "Didn’t receive your verification email? Resend it"}
-                </button>
+                </button>}
 
                 <Button
                   type="submit"
                   className="w-full py-3 text-sm font-semibold rounded-lg mt-3"
                   disabled={loading}
                 >
-                  {loading ? "Authenticating..." : "Sign In to PrideConnect"}
+                  {loading ? "Authenticating..." : twoFactorToken ? "Verify & Sign In" : "Sign In to PrideConnect"}
                 </Button>
               </form>
             </div>

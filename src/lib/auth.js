@@ -1,9 +1,11 @@
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
-import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 import { logActivity } from "./audit-log";
 import { consumeRateLimit } from "@/lib/rate-limit";
+import { validatePasswordCredentials, buildSignedInUser } from "@/lib/password-auth";
+import { createTwoFactorChallenge, getActiveChallenge, verifyChallengeCode } from "@/lib/two-factor-challenges";
+import { buildAppUrl } from "@/lib/app-url";
 
 export const authOptions = {
   session: {
@@ -27,84 +29,35 @@ export const authOptions = {
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        twoFactorToken: { label: "Verification challenge", type: "text" },
+        twoFactorCode: { label: "Verification code", type: "text" },
       },
       async authorize(credentials, request) {
         const genericFailure = "Unable to sign in with those credentials. Check your details or use account recovery.";
         const loginLimit = await consumeRateLimit({ request, scope: "credentials-login-ip", limit: 15, windowMs: 15 * 60 * 1000 });
         if (!loginLimit.allowed) throw new Error("Too many sign-in attempts. Try again later.");
-        const email = typeof credentials?.email === "string"
-          ? credentials.email.trim().toLowerCase()
-          : "";
-        if (!email || !credentials?.password) {
+        let user;
+        if (credentials?.twoFactorToken) {
+          const challenge = await getActiveChallenge(credentials.twoFactorToken, "LOGIN");
+          if (!challenge || !challenge.user.twoFactorEnabled || challenge.user.isDeleted || challenge.user.isSuspended || !challenge.user.isVerified
+            || (process.env.NODE_ENV === "production" && challenge.user.isDemo)
+            || (challenge.user.role === "FREQUENT_FLYER" && challenge.user.frequentFlyerVerification
+              && challenge.user.frequentFlyerVerification.status !== "RECORDS_MATCHED")) {
+            throw new Error("The verification request is invalid or expired. Sign in again.");
+          }
+          user = await verifyChallengeCode(challenge, credentials?.twoFactorCode);
+        } else {
+          user = await validatePasswordCredentials(credentials?.email, credentials?.password);
+        }
+        if (!user) throw new Error(genericFailure);
+
+        if (user.twoFactorEnabled && !credentials?.twoFactorToken) {
+          throw new Error("Complete the second verification step before signing in.");
+        } else if (!user.twoFactorEnabled && (credentials?.twoFactorToken || credentials?.twoFactorCode)) {
           throw new Error(genericFailure);
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email },
-          include: {
-            frequentFlyerVerification: { select: { status: true } },
-            profile: { select: { fullName: true } },
-          },
-        });
-
-        if (!user) {
-          throw new Error(genericFailure);
-        }
-        if (user.isDeleted) {
-          throw new Error(genericFailure);
-        }
-
-        if (process.env.NODE_ENV === "production" && user.isDemo) {
-          throw new Error(genericFailure);
-        }
-
-        if (!user.passwordHash) {
-          throw new Error(genericFailure);
-        }
-
-        const isValid = await bcrypt.compare(
-          credentials.password,
-          user.passwordHash
-        );
-
-        if (!isValid) {
-          throw new Error(genericFailure);
-        }
-
-        if (!user.isVerified) {
-          throw new Error(genericFailure);
-        }
-
-        if (user.isSuspended) {
-          throw new Error(genericFailure);
-        }
-
-        if (user.role === "FREQUENT_FLYER" && user.frequentFlyerVerification
-          && user.frequentFlyerVerification.status !== "RECORDS_MATCHED") {
-          throw new Error(genericFailure);
-        }
-
-        const previousSignIn = await prisma.adminAction.findFirst({
-          where: { adminId: user.id, actionType: "USER_SIGNED_IN" },
-          select: { id: true },
-        });
-
-        await logActivity({
-          actorId: user.id,
-          targetId: user.id,
-          actionType: "USER_SIGNED_IN",
-          summary: `${user.role === "ADMIN" ? "Administrator" : "Member"} signed in with email and password`,
-          details: { method: "credentials", role: user.role },
-        });
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.profile?.fullName || user.email,
-          role: user.role,
-          sessionVersion: user.sessionVersion || 0,
-          isFirstSignIn: !previousSignIn,
-        };
+        return buildSignedInUser(user, credentials?.twoFactorToken ? "two-factor verification" : "email and password");
       },
     }),
   ],
@@ -137,6 +90,17 @@ export const authOptions = {
         if (existingUser.role === "FREQUENT_FLYER" && existingUser.frequentFlyerVerification
           && existingUser.frequentFlyerVerification.status !== "RECORDS_MATCHED") {
           return false;
+        }
+
+        if (existingUser.twoFactorEnabled) {
+          try {
+            const challenge = await createTwoFactorChallenge({ user: existingUser, purpose: "LOGIN" });
+            const loginUrl = new URL(buildAppUrl("/login"));
+            loginUrl.hash = new URLSearchParams({ twoFactorToken: challenge.token, method: existingUser.twoFactorMethod || "AUTHENTICATOR" }).toString();
+            return loginUrl.toString();
+          } catch {
+            return false;
+          }
         }
 
         user.id = existingUser.id;

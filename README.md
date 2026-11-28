@@ -112,6 +112,8 @@ Set optional values only for the integrations you enable:
 | `BLOB_READ_WRITE_TOKEN` | Event banner uploads to Vercel Blob. Events can be posted without a banner. |
 | `FREQUENT_FLYER_VERIFICATION_KEY` | Encrypting Frequent Flyer membership and recent-flight evidence. Use a private, stable, base64-encoded 32-byte key. |
 | `RATE_LIMIT_SECRET` | Optional dedicated secret for hashing rate-limit identifiers. If omitted, the app uses `NEXTAUTH_SECRET`. |
+| `TWO_FACTOR_ENCRYPTION_KEY` | Required to enroll authenticator-app 2FA. Generate a private, stable, base64-encoded 32-byte key; the server uses it for AES-256-GCM encryption of TOTP secrets. |
+| `TWO_FACTOR_HASH_KEY` | Optional dedicated key for hashing one-time and recovery codes. If omitted, the app uses `NEXTAUTH_SECRET`. |
 | `ML_SERVICE_URL`, `ML_SERVICE_TOKEN` | Optional hosted Python inference service. |
 | `ML_COLAB_SYNC_TOKEN`, `ML_COLAB_USER_SALT` | Protected Colab data export and model publishing. Keep both private; keep the pseudonym salt stable. |
 
@@ -120,6 +122,8 @@ Generate secrets with a secure random generator. For example, generate the Frequ
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
+
+Use the same command to generate `TWO_FACTOR_ENCRYPTION_KEY`. Configure it in local `.env` and the deployment environment before enabling authenticator-based 2FA. Email-based 2FA uses the configured Gmail delivery integration. Apply the new `prisma/migrations/20261128100000_add_two_factor_auth/migration.sql` migration to the production database before deploying this version; it adds the 2FA configuration, challenge, and one-use recovery-code storage. Existing accounts remain without 2FA until each user enables it in Profile → Account security.
 
 Never commit `.env` or real credentials. Configure production values in the hosting provider, and set `APP_URL` and `NEXTAUTH_URL` to the public HTTPS site URL.
 
