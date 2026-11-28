@@ -36,6 +36,8 @@ export async function buildSignedInUser(user, method) {
     id: user.id,
     email: user.email,
     name: user.profile?.fullName || user.email,
+    ...(typeof user.image === "string" && user.image ? { image: user.image } : {}),
+    ...(typeof user.googleImage === "string" && user.googleImage ? { googleImage: user.googleImage } : {}),
     role: user.role,
     sessionVersion: user.sessionVersion || 0,
     isFirstSignIn: !previousSignIn,

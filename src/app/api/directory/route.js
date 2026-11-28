@@ -69,6 +69,7 @@ export async function GET(request) {
       select: {
         userId: true,
         fullName: true,
+        avatarUrl: true,
         department: true,
         bio: true,
         mentorshipRole: true,
@@ -88,6 +89,7 @@ export async function GET(request) {
     userId: p.user.id,
     role: p.user.role,
     fullName: p.fullName,
+    avatarUrl: p.avatarUrl,
     department: p.department,
     bio: p.bio,
     mentorshipRole: p.mentorshipRole,

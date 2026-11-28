@@ -161,6 +161,10 @@ model Profile {
   mentorshipRole         MentorshipRole?
   availability           String?
   isPublic               Boolean         @default(true)
+  avatarUrl              String?
+  coverImageUrl          String?
+  coverPositionX         Int             @default(50)
+  coverPositionY         Int             @default(50)
 
   skills               ProfileSkill[]
   interests            ProfileInterest[]

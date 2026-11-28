@@ -6,6 +6,7 @@ import { consumeRateLimit } from "@/lib/rate-limit";
 import { validatePasswordCredentials, buildSignedInUser } from "@/lib/password-auth";
 import { createTwoFactorChallenge, getActiveChallenge, verifyChallengeCode } from "@/lib/two-factor-challenges";
 import { buildAppUrl } from "@/lib/app-url";
+import { createGooglePhotoProof, verifyGooglePhotoProof } from "@/lib/google-photo-proof";
 
 export const authOptions = {
   session: {
@@ -31,6 +32,8 @@ export const authOptions = {
         password: { label: "Password", type: "password" },
         twoFactorToken: { label: "Verification challenge", type: "text" },
         twoFactorCode: { label: "Verification code", type: "text" },
+        googlePhoto: { label: "Google profile photo", type: "text" },
+        googlePhotoProof: { label: "Google profile photo proof", type: "text" },
       },
       async authorize(credentials, request) {
         const genericFailure = "Unable to sign in with those credentials. Check your details or use account recovery.";
@@ -46,6 +49,10 @@ export const authOptions = {
             throw new Error("The verification request is invalid or expired. Sign in again.");
           }
           user = await verifyChallengeCode(challenge, credentials?.twoFactorCode);
+        if (user && verifyGooglePhotoProof(credentials.twoFactorToken, credentials?.googlePhoto, credentials?.googlePhotoProof)) {
+            user.image = credentials.googlePhoto;
+            user.googleImage = credentials.googlePhoto;
+          }
         } else {
           user = await validatePasswordCredentials(credentials?.email, credentials?.password);
         }
@@ -96,7 +103,13 @@ export const authOptions = {
           try {
             const challenge = await createTwoFactorChallenge({ user: existingUser, purpose: "LOGIN" });
             const loginUrl = new URL(buildAppUrl("/login"));
-            loginUrl.hash = new URLSearchParams({ twoFactorToken: challenge.token, method: existingUser.twoFactorMethod || "AUTHENTICATOR" }).toString();
+            const params = new URLSearchParams({ twoFactorToken: challenge.token, method: existingUser.twoFactorMethod || "AUTHENTICATOR" });
+            const photoProof = createGooglePhotoProof(challenge.token, user.image);
+            if (photoProof) {
+              params.set("googlePhoto", user.image);
+              params.set("googlePhotoProof", photoProof);
+            }
+            loginUrl.hash = params.toString();
             return loginUrl.toString();
           } catch {
             return false;
@@ -123,7 +136,7 @@ export const authOptions = {
       }
       return true;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
         token.name = user.name || user.email;
@@ -132,6 +145,9 @@ export const authOptions = {
         token.isSuspended = Boolean(user.isSuspended);
         token.isDeleted = Boolean(user.isDeleted);
         token.isFirstSignIn = Boolean(user.isFirstSignIn);
+        if (Object.hasOwn(user, "image")) token.picture = user.image || null;
+        if (typeof user.googleImage === "string") token.googleImage = user.googleImage;
+        else if (account?.provider === "google" && typeof user.image === "string") token.googleImage = user.image;
       }
 
       // Check database for active suspension status on existing session tokens
@@ -139,7 +155,7 @@ export const authOptions = {
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: token.id },
-            select: { isSuspended: true, isDemo: true, isDeleted: true, role: true, passwordChangedAt: true, sessionVersion: true },
+            select: { isSuspended: true, isDemo: true, isDeleted: true, role: true, passwordChangedAt: true, sessionVersion: true, profile: { select: { avatarUrl: true } } },
           });
 
           if (dbUser) {
@@ -147,6 +163,7 @@ export const authOptions = {
             token.isDemo = dbUser.isDemo;
             token.isDeleted = dbUser.isDeleted;
             token.role = dbUser.role;
+            token.picture = dbUser.profile?.avatarUrl || token.googleImage || null;
             token.passwordResetRequired = Boolean(
               (token.sessionVersion ?? 0) !== (dbUser.sessionVersion ?? 0)
               || (dbUser.passwordChangedAt && token.iat && token.iat * 1000 < dbUser.passwordChangedAt.getTime())
@@ -173,6 +190,8 @@ export const authOptions = {
         session.user.role = token.role;
         session.user.isSuspended = token.isSuspended || false;
         session.user.isFirstSignIn = Boolean(token.isFirstSignIn);
+        session.user.image = token.picture || null;
+        session.user.googleImage = token.googleImage || null;
       }
       return session;
     },

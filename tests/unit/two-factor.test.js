@@ -7,6 +7,7 @@ import {
   hashChallengeToken,
   verifyTotp,
 } from "@/lib/two-factor";
+import { createGooglePhotoProof, verifyGooglePhotoProof } from "@/lib/google-photo-proof";
 
 describe("two-factor primitives", () => {
   afterEach(() => {
@@ -42,5 +43,16 @@ describe("two-factor primitives", () => {
     expect(hashChallengeToken("token-one")).not.toBe("token-one");
     expect(hashChallengeToken("token-one")).toBe(hashChallengeToken("token-one"));
     expect(hashChallengeToken("token-one")).not.toBe(hashChallengeToken("token-two"));
+  });
+
+  it("binds a Google profile image to the specific two-factor challenge", () => {
+    process.env.NEXTAUTH_SECRET = "test-only-secret";
+    const token = "challenge-token-one";
+    const image = "https://lh3.googleusercontent.com/member-photo";
+    const proof = createGooglePhotoProof(token, image);
+
+    expect(verifyGooglePhotoProof(token, image, proof)).toBe(true);
+    expect(verifyGooglePhotoProof("another-challenge", image, proof)).toBe(false);
+    expect(verifyGooglePhotoProof(token, "https://attacker.example/photo.png", proof)).toBe(false);
   });
 });

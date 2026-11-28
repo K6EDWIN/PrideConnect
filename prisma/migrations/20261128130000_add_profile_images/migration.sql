@@ -1,0 +1,5 @@
+ALTER TABLE "Profile"
+  ADD COLUMN "avatarUrl" TEXT,
+  ADD COLUMN "coverImageUrl" TEXT,
+  ADD COLUMN "coverPositionX" INTEGER NOT NULL DEFAULT 50,
+  ADD COLUMN "coverPositionY" INTEGER NOT NULL DEFAULT 50;

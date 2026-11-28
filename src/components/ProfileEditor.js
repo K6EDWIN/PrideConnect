@@ -23,7 +23,7 @@ const ROLE_OPTIONS = [
 ];
 
 export default function ProfileEditor({ adminWorkspace = false, standalone = false }) {
-  const { status, data: session } = useSession();
+  const { status, data: session, update: updateSession } = useSession();
   const router = useRouter();
   const isAdmin = session?.user?.role === "ADMIN";
 
@@ -51,6 +51,14 @@ export default function ProfileEditor({ adminWorkspace = false, standalone = fal
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [avatarSrc, setAvatarSrc] = useState(null);
+  const [savedAvatarUrl, setSavedAvatarUrl] = useState("");
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState("");
+  const [coverUrl, setCoverUrl] = useState("");
+  const [coverFile, setCoverFile] = useState(null);
+  const [coverPreview, setCoverPreview] = useState("");
+  const [coverPosition, setCoverPosition] = useState({ x: 50, y: 50 });
+  const [savingImage, setSavingImage] = useState("");
   const avatarStorageKey = session?.user?.id ? `kq_user_avatar:${session.user.id}` : null;
   const interpretedAvailability = describeAvailability(form.availability);
 
@@ -66,67 +74,185 @@ export default function ProfileEditor({ adminWorkspace = false, standalone = fal
     return () => window.cancelAnimationFrame(frame);
   }, [avatarStorageKey, session?.user?.image]);
 
+  useEffect(() => () => {
+    if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+    if (coverPreview) URL.revokeObjectURL(coverPreview);
+  }, [avatarPreview, coverPreview]);
+
   const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Image file size must be less than 5MB");
+    if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) {
+      setError("Choose a JPG, PNG, or WebP profile photo.");
       return;
     }
-    if (!avatarStorageKey) {
-      setError("Sign in again before changing your profile photo.");
+    if (file.size <= 0 || file.size > 5 * 1024 * 1024) {
+      setError("Profile photos must be smaller than 5 MB.");
       return;
     }
-
     try {
       const image = await createImageBitmap(file);
-      const scale = Math.min(1, 512 / Math.max(image.width, image.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(image.width * scale));
-      canvas.height = Math.max(1, Math.round(image.height * scale));
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Your browser could not prepare that image.");
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
       image.close?.();
-      const dataUrl = canvas.toDataURL("image/webp", 0.82);
-      setAvatarSrc(dataUrl);
-      localStorage.setItem(avatarStorageKey, dataUrl);
-      window.dispatchEvent(new Event("kq-avatar-updated"));
-      setMessage("Profile photo updated on this device.");
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+      setAvatarPreview(URL.createObjectURL(file));
+      setAvatarFile(file);
+      setMessage("Previewing your new profile photo. Save it to publish the change.");
       setError("");
-    } catch (uploadError) {
-      setError(uploadError?.name === "QuotaExceededError"
-        ? "This browser is out of storage space. Remove an older profile photo and try again."
-        : uploadError.message || "Could not read that image. Try a JPG, PNG, or WebP file.");
+    } catch {
+      setError("Could not read that image. Choose a valid JPG, PNG, or WebP file.");
     }
   };
 
-  const handleUseGooglePhoto = () => {
-    if (!session?.user?.image || !avatarStorageKey) {
+  const handleCoverUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) {
+      setError("Choose a JPG, PNG, or WebP cover image.");
+      return;
+    }
+    if (file.size <= 0 || file.size > 5 * 1024 * 1024) {
+      setError("Cover images must be smaller than 5 MB.");
+      return;
+    }
+    try {
+      const image = await createImageBitmap(file);
+      image.close?.();
+      if (coverPreview) URL.revokeObjectURL(coverPreview);
+      setCoverPreview(URL.createObjectURL(file));
+      setCoverFile(file);
+      setMessage("Previewing your new cover banner. Adjust its position, then save it.");
+      setError("");
+    } catch {
+      setError("Could not read that image. Choose a valid JPG, PNG, or WebP file.");
+    }
+  };
+
+  const saveProfileImage = async (kind) => {
+    const file = kind === "avatar" ? avatarFile : coverFile;
+    if (!file || !session?.user?.id) return;
+    setSavingImage(kind);
+    setError("");
+    setMessage("");
+    try {
+      const body = new FormData();
+      body.set("kind", kind);
+      body.set("image", file);
+      if (kind === "cover") {
+        body.set("positionX", String(coverPosition.x));
+        body.set("positionY", String(coverPosition.y));
+      }
+      const response = await fetch("/api/profile/images", { method: "POST", body });
+      const data = await readApiResponse(response, "Could not save your profile image");
+      if (!response.ok) throw new Error(data.error || "Could not save your profile image.");
+      if (kind === "avatar") {
+        setAvatarSrc(data.profile.avatarUrl || null);
+        setSavedAvatarUrl(data.profile.avatarUrl || "");
+        setAvatarFile(null);
+        setAvatarPreview("");
+        try { if (avatarStorageKey) localStorage.removeItem(avatarStorageKey); } catch { /* Server copy is saved. */ }
+        window.dispatchEvent(new Event("kq-avatar-updated"));
+        await updateSession();
+        setMessage("Profile photo saved to your account.");
+      } else {
+        setCoverUrl(data.profile.coverImageUrl || "");
+        setCoverPosition({ x: data.profile.coverPositionX, y: data.profile.coverPositionY });
+        setCoverFile(null);
+        setCoverPreview("");
+        setMessage("Cover banner saved to your account.");
+      }
+    } catch (saveError) {
+      setError(saveError.message || "Could not save your profile image.");
+    } finally {
+      setSavingImage("");
+    }
+  };
+
+  const handleUseGooglePhoto = async () => {
+    const googleImage = session?.user?.googleImage;
+    if (!googleImage || !avatarStorageKey) {
       setError("A Google profile photo is not available for this sign-in.");
       return;
     }
+    setSavingImage("avatar");
+    setError("");
     try {
-      localStorage.removeItem(avatarStorageKey);
-      setAvatarSrc(session.user.image);
+      const response = await fetch("/api/profile/images", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "avatar", source: "google", url: googleImage }),
+      });
+      const data = await readApiResponse(response, "Could not use your Google photo");
+      if (!response.ok) throw new Error(data.error || "Could not use your Google photo.");
+      setAvatarSrc(data.profile.avatarUrl);
+      setSavedAvatarUrl(data.profile.avatarUrl || "");
+      setAvatarFile(null);
+      setAvatarPreview("");
+      try { localStorage.removeItem(avatarStorageKey); } catch { /* Server copy is saved. */ }
       window.dispatchEvent(new Event("kq-avatar-updated"));
-      setMessage("Using your Google profile photo.");
-      setError("");
-    } catch {
-      setError("Could not update your profile photo in this browser.");
+      await updateSession();
+      setMessage("Google profile photo saved to your account.");
+    } catch (saveError) {
+      setError(saveError.message || "Could not save your Google profile photo.");
+    } finally {
+      setSavingImage("");
     }
   };
 
-  const handleRemovePhoto = () => {
+  const handleRemoveImage = async (kind) => {
+    setSavingImage(kind);
+    setError("");
+    setMessage("");
     try {
-      if (avatarStorageKey) localStorage.removeItem(avatarStorageKey);
-      setAvatarSrc(session?.user?.image || null);
-      window.dispatchEvent(new Event("kq-avatar-updated"));
-      setMessage(session?.user?.image ? "Using your Google profile photo." : "Profile picture reset to initials.");
-      setError("");
-    } catch {
-      setError("Could not remove the saved profile photo in this browser.");
+      const response = await fetch("/api/profile/images", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind }),
+      });
+      const data = await readApiResponse(response, "Could not remove your profile image");
+      if (!response.ok) throw new Error(data.error || "Could not remove your profile image.");
+      if (kind === "avatar") {
+        setSavedAvatarUrl("");
+        setAvatarSrc(session?.user?.googleImage || null);
+        setAvatarFile(null);
+        setAvatarPreview("");
+        try { if (avatarStorageKey) localStorage.removeItem(avatarStorageKey); } catch { /* Database image is removed. */ }
+        window.dispatchEvent(new Event("kq-avatar-updated"));
+        await updateSession();
+        setMessage("Profile photo removed.");
+      } else {
+        setCoverUrl("");
+        setCoverFile(null);
+        setCoverPreview("");
+        setCoverPosition({ x: 50, y: 50 });
+        setMessage("Cover banner removed. Your PrideConnect banner is restored.");
+      }
+    } catch (removeError) {
+      setError(removeError.message || "Could not remove your profile image.");
+    } finally {
+      setSavingImage("");
+    }
+  };
+
+  const saveCoverPosition = async () => {
+    setSavingImage("position");
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/profile/images", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ positionX: coverPosition.x, positionY: coverPosition.y }),
+      });
+      const data = await readApiResponse(response, "Could not save banner position");
+      if (!response.ok) throw new Error(data.error || "Could not save banner position.");
+      setCoverPosition({ x: data.profile.coverPositionX, y: data.profile.coverPositionY });
+      setMessage("Cover banner position saved.");
+    } catch (positionError) {
+      setError(positionError.message || "Could not save banner position.");
+    } finally {
+      setSavingImage("");
     }
   };
 
@@ -156,6 +282,14 @@ export default function ProfileEditor({ adminWorkspace = false, standalone = fal
         setMeta(metaData);
 
         const { profile } = await readApiResponse(profileRes, "Could not load your profile");
+        setAvatarSrc(profile.avatarUrl || session?.user?.image || null);
+        setSavedAvatarUrl(profile.avatarUrl || "");
+        setCoverUrl(profile.coverImageUrl || "");
+        setCoverPosition({ x: profile.coverPositionX ?? 50, y: profile.coverPositionY ?? 50 });
+        if (profile.avatarUrl) {
+          try { if (avatarStorageKey) localStorage.removeItem(avatarStorageKey); } catch { /* Ignore outdated browser-only photo data. */ }
+          window.dispatchEvent(new Event("kq-avatar-updated"));
+        }
         setAvailabilityDraft(createAvailabilityDraft(profile.availability || ""));
         setForm((f) => ({
           ...f,
@@ -182,7 +316,7 @@ export default function ProfileEditor({ adminWorkspace = false, standalone = fal
     }
 
     load();
-  }, [status]);
+  }, [status, avatarStorageKey, session?.user?.image]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -293,85 +427,80 @@ export default function ProfileEditor({ adminWorkspace = false, standalone = fal
     <Shell>
       <div className="app-page max-w-5xl">
         {/* Profile Header */}
-        <div className="card profile-hero overflow-hidden mb-8">
-          <div className="h-28 bg-gradient-to-r from-[#071626] via-[#0e2740] to-[#1e3a5f] relative">
-            <div className="absolute inset-0 opacity-15 pointer-events-none">
-              <svg className="w-full h-full" viewBox="0 0 500 150" fill="none">
-                <path d="M10 120 C150 40 350 140 490 20" stroke="#fff" strokeWidth="1.5" strokeDasharray="6 6" />
+        <section className="card profile-hero mb-8" aria-label="Profile header">
+          <div
+            className={`profile-cover${coverPreview || coverUrl ? " has-custom-cover" : ""}`}
+            style={{
+              ...(coverPreview || coverUrl ? { backgroundImage: `url("${coverPreview || coverUrl}")` } : {}),
+              backgroundPosition: `${coverPosition.x}% ${coverPosition.y}%`,
+            }}
+          >
+            {!coverPreview && !coverUrl && (
+              <svg className="profile-cover-art" viewBox="0 0 1000 240" fill="none" aria-hidden="true">
+                <path d="M-40 195C166 68 318 212 494 119S789 127 1044 14" stroke="white" strokeOpacity=".34" strokeWidth="2" strokeDasharray="8 10" />
+                <circle cx="820" cy="38" r="120" fill="white" fillOpacity=".035" />
+                <circle cx="900" cy="216" r="170" fill="#c8102e" fillOpacity=".11" />
               </svg>
-            </div>
+            )}
+            {coverPreview && <span className="profile-cover-preview-label">Banner preview · save to publish</span>}
+            <label htmlFor="profile-cover-upload" className="profile-cover-upload" title="Choose a cover banner">
+              <Icon name="upload" size={14} />
+              <span>{coverUrl || coverPreview ? "Change cover" : "Add cover"}</span>
+            </label>
+            <input id="profile-cover-upload" type="file" accept="image/jpeg,image/png,image/webp" onChange={handleCoverUpload} className="hidden" />
           </div>
-          <div className="px-6 sm:px-8 pb-6 pt-0 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 -mt-10 relative z-10">
-            <div className="flex flex-col sm:flex-row items-center sm:items-end gap-4">
-              <div className="relative group shrink-0">
-                <div className="border-4 border-white rounded-full shadow-md bg-white overflow-hidden">
-                  <Avatar name={form.fullName || session?.user?.email} src={avatarSrc || session?.user?.image} userId={session?.user?.id} size="xl" />
-                </div>
-                <label
-                  htmlFor="profile-avatar-upload"
-                  className="absolute bottom-0 right-0 p-2 bg-[#c8102e] hover:bg-[#a00d24] text-white rounded-full shadow-md cursor-pointer transition transform hover:scale-105"
-                  title="Upload profile picture"
-                >
-                  <Icon name="profile" size={13} />
+
+          <div className="profile-identity-panel">
+            <div className="profile-identity-main">
+              <div className="profile-avatar-wrap">
+                <Avatar name={form.fullName || session?.user?.email} src={avatarPreview || avatarSrc || session?.user?.image} userId={session?.user?.id} size="xl" />
+                <label htmlFor="profile-avatar-upload" className="profile-avatar-edit" title="Choose a profile photo">
+                  <Icon name="upload" size={13} />
                 </label>
-                <input
-                  id="profile-avatar-upload"
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif"
-                  onChange={handlePhotoUpload}
-                  className="hidden"
-                />
+                <input id="profile-avatar-upload" type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoUpload} className="hidden" />
               </div>
-
-              <div className="min-w-0 text-center sm:text-left">
-                <h1 className="break-words text-2xl font-extrabold text-slate-900 tracking-tight">
-                  {form.fullName || "Your Profile"}
-                </h1>
-                <p className="profile-subtitle mt-0.5 break-words text-xs text-slate-500">
-                  {isAdmin ? "Executive Administration" : form.department || "Kenya Airways Stakeholder"} · {session?.user?.email} · {isAdmin ? "Executive Administrator" : "Verified Member"}
-                </p>
-
-                {/* Profile Photo Quick Controls */}
-                <div className="flex items-center gap-2 mt-2.5 flex-wrap justify-center sm:justify-start">
-                  <label
-                    htmlFor="profile-avatar-upload"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold cursor-pointer transition shadow-2xs"
-                  >
-                    <Icon name="profile" size={12} />
-                    <span>Upload Photo</span>
-                  </label>
-
-                  <button
-                    type="button"
-                    onClick={handleUseGooglePhoto}
-                    disabled={!session?.user?.image}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold cursor-pointer transition shadow-2xs disabled:cursor-not-allowed disabled:opacity-50"
-                    title="Import or sync photo from Google account"
-                  >
-                    <GoogleIcon size={14} />
-                    <span>{session?.user?.image ? "Use Google Photo" : "Google Photo"}</span>
-                  </button>
-
-                  {avatarSrc && (
-                    <button
-                      type="button"
-                      onClick={handleRemovePhoto}
-                      className="px-2.5 py-1.5 text-xs text-red-600 hover:text-red-800 font-medium cursor-pointer"
-                    >
-                      Remove
-                    </button>
-                  )}
+              <div className="profile-identity-copy">
+                <h1>{form.fullName || "Your Profile"}</h1>
+                <p className="profile-email">{session?.user?.email}</p>
+                <div className="profile-identity-details">
+                  <span>{isAdmin ? "Executive Administration" : form.department || "Kenya Airways Stakeholder"}</span>
+                  <span className="profile-detail-separator" aria-hidden="true">•</span>
+                  <span>{isAdmin ? "Executive Administrator" : "Verified Member"}</span>
                 </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
-                <Icon name="shield" size={13} />
+              <span className={`profile-access-badge${isAdmin ? " executive" : ""}`}>
+                <Icon name="shield" size={14} />
                 {isAdmin ? "Executive Access" : "Verified Member"}
               </span>
             </div>
+
+            <div className="profile-media-controls">
+              <div className="profile-media-group" aria-label="Profile photo controls">
+                <label htmlFor="profile-avatar-upload" className="profile-media-button">
+                  <Icon name="profile" size={13} /> Upload photo
+                </label>
+                <button type="button" onClick={handleUseGooglePhoto} disabled={!session?.user?.googleImage || Boolean(savingImage)} className="profile-media-button" title="Save the photo from your Google account">
+                  <GoogleIcon size={14} /> Use Google photo
+                </button>
+                {savedAvatarUrl && <button type="button" onClick={() => handleRemoveImage("avatar")} disabled={Boolean(savingImage)} className="profile-media-remove">Remove photo</button>}
+                {avatarFile && <button type="button" onClick={() => saveProfileImage("avatar")} disabled={Boolean(savingImage)} className="profile-media-save">{savingImage === "avatar" ? "Saving…" : "Save photo"}</button>}
+                {avatarFile && <button type="button" onClick={() => { setAvatarFile(null); setAvatarPreview(""); setMessage(""); }} className="profile-media-cancel">Cancel</button>}
+              </div>
+              {(coverFile || coverUrl) && <div className="profile-cover-position" aria-label="Cover banner positioning">
+                <label htmlFor="cover-position-x">Horizontal crop</label>
+                <input id="cover-position-x" type="range" min="0" max="100" value={coverPosition.x} onChange={(event) => setCoverPosition((position) => ({ ...position, x: Number(event.target.value) }))} />
+                <label htmlFor="cover-position-y">Vertical crop</label>
+                <input id="cover-position-y" type="range" min="0" max="100" value={coverPosition.y} onChange={(event) => setCoverPosition((position) => ({ ...position, y: Number(event.target.value) }))} />
+                {coverFile
+                  ? <button type="button" onClick={() => saveProfileImage("cover")} disabled={Boolean(savingImage)} className="profile-media-save">{savingImage === "cover" ? "Saving…" : "Save banner"}</button>
+                  : <button type="button" onClick={saveCoverPosition} disabled={Boolean(savingImage)} className="profile-media-save">{savingImage === "position" ? "Saving…" : "Save position"}</button>}
+                {coverFile && <button type="button" onClick={() => { setCoverFile(null); setCoverPreview(""); setMessage(""); }} className="profile-media-cancel">Cancel</button>}
+                {coverUrl && !coverFile && <button type="button" onClick={() => handleRemoveImage("cover")} disabled={Boolean(savingImage)} className="profile-media-remove">Remove cover</button>}
+              </div>}
+              {!coverFile && !coverUrl && <span className="profile-cover-help">Add a cover banner to personalise your profile.</span>}
+            </div>
           </div>
-        </div>
+        </section>
 
         {/* Form Grid */}
         <form onSubmit={handleSubmit} className="space-y-6">
