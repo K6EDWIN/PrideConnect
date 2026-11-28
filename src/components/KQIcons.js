@@ -59,6 +59,12 @@ export function Icon({ name, size = 18, className = "" }) {
         <line x1="21" y1="12" x2="9" y2="12" />
       </>
     ),
+    link: (
+      <>
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.72-1.71" />
+      </>
+    ),
     menu: <path d="M4 7h16M4 12h16M4 17h16" />,
     message: (
       <>

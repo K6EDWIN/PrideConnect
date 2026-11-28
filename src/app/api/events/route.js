@@ -19,6 +19,7 @@ export async function GET(request) {
 
   const params = new URL(request.url).searchParams;
   const q = params.get("q")?.trim().slice(0, 120) || "";
+  const eventId = params.get("eventId")?.trim() || "";
   const time = params.get("time") || "upcoming";
   const format = params.get("format") || "";
   const requestedPage = Number.parseInt(params.get("page") || "1", 10);
@@ -26,17 +27,18 @@ export async function GET(request) {
   const pageSize = 24;
   const now = new Date();
   const filters = [{ isHidden: false, createdBy: { isDeleted: false } }];
-  if (time === "upcoming") filters.push({ eventDate: { gte: now } });
-  if (time === "past") filters.push({ eventDate: { lt: now } });
-  if (q) filters.push({ OR: [
+  if (eventId) filters.push({ id: eventId });
+  else if (time === "upcoming") filters.push({ eventDate: { gte: now } });
+  else if (time === "past") filters.push({ eventDate: { lt: now } });
+  if (!eventId && q) filters.push({ OR: [
     { title: { contains: q, mode: "insensitive" } },
     { description: { contains: q, mode: "insensitive" } },
     { location: { contains: q, mode: "insensitive" } },
     { createdBy: { profile: { is: { fullName: { contains: q, mode: "insensitive" } } } } },
   ] });
   const onlineLocationFilters = ["online", "virtual", "teams", "zoom"].map((term) => ({ location: { contains: term, mode: "insensitive" } }));
-  if (format === "online") filters.push({ OR: onlineLocationFilters });
-  if (format === "inperson") filters.push({ OR: [
+  if (!eventId && format === "online") filters.push({ OR: onlineLocationFilters });
+  if (!eventId && format === "inperson") filters.push({ OR: [
     { location: null },
     { AND: onlineLocationFilters.map((condition) => ({ NOT: condition })) },
   ] });
@@ -50,7 +52,9 @@ export async function GET(request) {
         description: true,
         location: true,
         bannerUrl: true,
+        photoUrls: true,
         eventDate: true,
+        createdById: true,
         createdBy: { select: { profile: { select: { fullName: true } } } },
         _count: { select: { participants: true } },
         participants: { where: { userId: session.user.id }, select: { userId: true }, take: 1 },
@@ -68,7 +72,9 @@ export async function GET(request) {
     description: e.description,
     location: e.location,
     bannerUrl: e.bannerUrl,
+    photoUrls: e.photoUrls || [],
     eventDate: e.eventDate,
+    canManage: e.createdById === session.user.id || session.user.role === "ADMIN",
     isPast: e.eventDate < new Date(),
     createdByName: e.createdBy?.profile?.fullName || "Unknown",
     participantCount: e._count.participants,
@@ -93,7 +99,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: "Enter valid event details and try again." }, { status: 400 });
   }
-  const { title, description, location, eventDate, bannerUrl } = payload || {};
+  const { title, description, location, eventDate, bannerUrl, photoUrls = [] } = payload || {};
 
   if (typeof title !== "string" || !title.trim() || !eventDate) {
     return NextResponse.json(
@@ -116,6 +122,9 @@ export async function POST(request) {
       return NextResponse.json({ error: "Upload the banner again before publishing." }, { status: 400 });
     }
   }
+  if (!Array.isArray(photoUrls) || photoUrls.length > 8 || photoUrls.some((url) => !isEventBlobUrl(url))) {
+    return NextResponse.json({ error: "Use up to eight valid uploaded event photos." }, { status: 400 });
+  }
 
   const event = await prisma.event.create({ data: {
     createdById: session.user.id,
@@ -123,6 +132,7 @@ export async function POST(request) {
     description: typeof description === "string" ? description.trim() || null : null,
     location: typeof location === "string" ? location.trim() || null : null,
     bannerUrl: bannerUrl || null,
+    photoUrls,
     eventDate: parsedDate,
   } });
 
@@ -142,7 +152,7 @@ export async function POST(request) {
       });
       const recipients = [...new Set(members.map((member) => member.email).filter(Boolean))];
       if (!recipients.length) return;
-      const eventUrl = buildAppUrl("/events", { eventId: event.id });
+      const eventUrl = buildAppUrl(`/events/${encodeURIComponent(event.id)}`);
       const safeTitle = escapeHtml(event.title);
       const safeDescription = escapeHtml(event.description || "Join the community for this event.").replace(/\n/g, "<br>");
       const safeLocation = escapeHtml(event.location || "Details to be announced");
@@ -160,4 +170,15 @@ export async function POST(request) {
   });
 
   return NextResponse.json({ event, announcement: { queued: true } }, { status: 201 });
+}
+
+function isEventBlobUrl(value) {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password
+      && url.hostname.endsWith(".public.blob.vercel-storage.com");
+  } catch {
+    return false;
+  }
 }

@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import KQAppShell from "@/components/KQAppShell";
 import { Button, Tag } from "@/components/KQBrand";
 import { Icon } from "@/components/KQIcons";
@@ -16,9 +18,18 @@ const TYPE_OPTIONS = [
   "Alumni Reunion",
 ];
 
+function OpportunitiesLoading() {
+  return <KQAppShell><div className="app-page"><div className="card p-10 text-center text-slate-600">Loading opportunities…</div></div></KQAppShell>;
+}
+
 export default function OpportunitiesPage() {
+  return <Suspense fallback={<OpportunitiesLoading />}><OpportunitiesContent /></Suspense>;
+}
+
+function OpportunitiesContent() {
   const { status, data: session } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [opportunities, setOpportunities] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,10 +46,10 @@ export default function OpportunitiesPage() {
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState("");
   const [postNotice, setPostNotice] = useState("");
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("");
-  const [showAll, setShowAll] = useState(false);
+  const [search, setSearch] = useState(() => searchParams.get("q") || "");
+  const [typeFilter, setTypeFilter] = useState(() => searchParams.get("type") || "");
+  const [sourceFilter, setSourceFilter] = useState(() => searchParams.get("source") || "");
+  const [showAll, setShowAll] = useState(() => searchParams.get("all") === "1");
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
@@ -167,6 +178,14 @@ export default function OpportunitiesPage() {
     return matchesSearch && matchesType && matchesSource;
   });
   const visibleOpportunities = showAll ? filteredOpportunities : filteredOpportunities.slice(0, 6);
+  const opportunityReturnTo = (() => {
+    const params = new URLSearchParams();
+    if (search) params.set("q", search);
+    if (typeFilter) params.set("type", typeFilter);
+    if (sourceFilter) params.set("source", sourceFilter);
+    if (showAll) params.set("all", "1");
+    return `/opportunities${params.size ? `?${params}` : ""}`;
+  })();
 
   if (status === "loading" || loading) {
     return (
@@ -352,11 +371,17 @@ export default function OpportunitiesPage() {
                 {visibleOpportunities.map((o) => (
                   <article
                     key={o.id}
-                    className="card p-5 hover:border-slate-300 transition"
+                    className="card overflow-hidden p-0 transition hover:border-slate-300"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
+                    <Link href={`/opportunities/${encodeURIComponent(o.id)}?returnTo=${encodeURIComponent(opportunityReturnTo)}`} className="group relative block aspect-[1200/420] overflow-hidden bg-slate-900">
+                      <Image src={o.imageUrl || (o.sourceUrl ? "/opportunity-kq-careers.svg" : "/community-post.svg")} alt={o.sourceUrl ? "Kenya Airways Careers opportunity" : "PrideConnect community opportunity"} width={1200} height={420} unoptimized className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.025]" />
+                      <span className="absolute left-4 top-4 rounded-full border border-white/30 bg-slate-950/65 px-3 py-1.5 text-xs font-bold text-white backdrop-blur">{o.sourceUrl ? "Kenya Airways Careers" : "Community opportunity"}</span>
+                      <span className="absolute bottom-4 right-4 rounded-full bg-white/95 px-3 py-1.5 text-xs font-bold text-slate-800">View details →</span>
+                    </Link>
+                    <div className="p-5">
+                    <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <h3 className="font-bold text-base text-slate-900">{o.title}</h3>
+                        <h3 className="text-base font-bold text-slate-900"><Link className="hover:text-[#a30d25]" href={`/opportunities/${encodeURIComponent(o.id)}?returnTo=${encodeURIComponent(opportunityReturnTo)}`}>{o.title}</Link></h3>
                         <span className="text-xs text-slate-500 break-words">
                           Shared by {o.postedBy?.profile?.fullName || "Kenya Airways Member"}
                         </span>
@@ -364,8 +389,8 @@ export default function OpportunitiesPage() {
                       <Tag gold={o.type.includes("Career")} className="shrink-0">{o.type}</Tag>
                     </div>
 
-                    <p className="text-sm text-slate-700 leading-relaxed mt-2 whitespace-pre-wrap">
-                      {o.description}
+                    <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                      {o.description || "Open this listing to view the full opportunity details."}
                     </p>
 
                     {(o.division || o.employmentType || o.expiresAt) && <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">{o.division && <span className="rounded-full bg-slate-100 px-2.5 py-1">{o.division}</span>}{o.employmentType && <span className="rounded-full bg-slate-100 px-2.5 py-1">{o.employmentType}</span>}{o.expiresAt && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-900">Closes {new Date(o.expiresAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}</span>}</div>}
@@ -374,9 +399,11 @@ export default function OpportunitiesPage() {
                       <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
                         <Icon name="check" size={13} /> {o.sourceUrl ? "Source: Kenya Airways Careers" : "Community post"}{o.liveSource ? " · Live feed" : ""}
                       </span>
+                      <Link href={`/opportunities/${encodeURIComponent(o.id)}?returnTo=${encodeURIComponent(opportunityReturnTo)}`} className="rounded-lg border border-slate-300 px-3 py-2 font-semibold text-slate-700 hover:bg-slate-50">Full details</Link>
                       {o.sourceUrl && <a href={o.sourceUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-slate-300 px-3 py-2 font-semibold text-slate-700 hover:bg-slate-50">View original &amp; apply</a>}
                     </div>
-                    <ReportButton targetType="OPPORTUNITY" targetId={o.id} />
+                    {!o.liveSource && <ReportButton targetType="OPPORTUNITY" targetId={o.id} />}
+                    </div>
                   </article>
                 ))}
               </div>

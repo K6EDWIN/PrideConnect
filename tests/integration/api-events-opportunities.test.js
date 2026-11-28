@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as createEvent } from "@/app/api/events/route";
+import { GET as getEvent } from "@/app/api/events/[id]/route";
 import { POST as createOpportunity } from "@/app/api/opportunities/route";
 import { getServerSession } from "next-auth/next";
 import { prisma } from "@/lib/prisma";
@@ -17,7 +18,7 @@ vi.mock("@/lib/audit-log", () => ({ logActivity: vi.fn() }));
 vi.mock("@/lib/gmail", () => ({ GMAIL_SENDER: "sender@example.com", sendAppEmail: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    event: { create: vi.fn() },
+    event: { create: vi.fn(), findFirst: vi.fn() },
     opportunity: { create: vi.fn() },
     user: { findMany: vi.fn() },
   },
@@ -107,5 +108,45 @@ describe("event and opportunity publishing", () => {
 
     expect(response.status).toBe(201);
     expect(data.opportunity.id).toBe("opportunity-1");
+  });
+});
+
+describe("GET /api/events/[id]", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getServerSession.mockResolvedValue({ user: { id: "member-1", role: "STAFF" } });
+  });
+
+  it("returns the requested event with organiser, gallery, and RSVP state", async () => {
+    prisma.event.findFirst.mockResolvedValue({
+      id: "event-1",
+      title: "Aviation Careers Evening",
+      description: "Meet the operations team.",
+      location: "Nairobi",
+      bannerUrl: "https://preview.public.blob.vercel-storage.com/event.webp",
+      photoUrls: ["https://preview.public.blob.vercel-storage.com/photo.webp"],
+      eventDate: new Date(Date.now() + 60_000),
+      createdById: "organiser-1",
+      createdBy: { profile: { fullName: "Aviation Alumni" } },
+      _count: { participants: 4 },
+      participants: [{ userId: "member-1" }],
+    });
+
+    const response = await getEvent(new Request("https://example.test/api/events/event-1"), { params: Promise.resolve({ id: "event-1" }) });
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(prisma.event.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "event-1", isHidden: false, createdBy: { isDeleted: false } },
+    }));
+    expect(data.event).toMatchObject({ id: "event-1", createdByName: "Aviation Alumni", participantCount: 4, isJoined: true, canManage: false });
+    expect(data.event.photoUrls).toHaveLength(1);
+  });
+
+  it("does not expose event details to signed-out visitors", async () => {
+    getServerSession.mockResolvedValueOnce(null);
+    const response = await getEvent(new Request("https://example.test/api/events/event-1"), { params: Promise.resolve({ id: "event-1" }) });
+    expect(response.status).toBe(401);
+    expect(prisma.event.findFirst).not.toHaveBeenCalled();
   });
 });

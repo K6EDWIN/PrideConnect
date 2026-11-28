@@ -2,9 +2,11 @@ import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 const MAX_BANNER_BYTES = 4 * 1024 * 1024;
+const MAX_REQUEST_IMAGE_BYTES = 4 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 async function matchesImageType(file) {
@@ -20,8 +22,8 @@ export async function POST(request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  const uploadLimit = await consumeRateLimit({ request, scope: "event-banner-user", identity: session.user.id, limit: 8, windowMs: 60 * 60 * 1000 });
-  if (!uploadLimit.allowed) return rateLimitResponse(uploadLimit.retryAfter, "You have uploaded several banners recently. Try again later.");
+  const uploadLimit = await consumeRateLimit({ request, scope: "event-banner-user", identity: session.user.id, limit: 16, windowMs: 60 * 60 * 1000 });
+  if (!uploadLimit.allowed) return rateLimitResponse(uploadLimit.retryAfter, "You have uploaded several event images recently. Try again later.");
 
   const hasReadWriteToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
   const hasVercelOidcStore = process.env.VERCEL === "1" && Boolean(process.env.BLOB_STORE_ID);
@@ -29,30 +31,49 @@ export async function POST(request) {
     return NextResponse.json({ error: "Banner uploads are not configured yet. Add a Vercel Blob store to enable them." }, { status: 503 });
   }
 
-  let file;
+  let formData;
   try {
-    file = (await request.formData()).get("banner");
+    formData = await request.formData();
   } catch {
     return NextResponse.json({ error: "Choose a valid banner image and try again." }, { status: 400 });
   }
-  if (!file || typeof file === "string" || !ALLOWED_TYPES.has(file.type)) {
-    return NextResponse.json({ error: "Choose a JPG, PNG, or WebP banner." }, { status: 400 });
+  const banner = formData.get("banner");
+  const photos = formData.getAll("photos");
+  const files = banner && typeof banner !== "string" ? [banner] : photos;
+  if (!files.length || files.some((file) => typeof file === "string" || !ALLOWED_TYPES.has(file.type))) {
+    return NextResponse.json({ error: "Choose JPG, PNG, or WebP event images." }, { status: 400 });
   }
-  if (file.size <= 0 || file.size > MAX_BANNER_BYTES) {
-    return NextResponse.json({ error: "Banner images must be smaller than 4 MB." }, { status: 400 });
+  if (files.length > 8) return NextResponse.json({ error: "Upload up to eight event photos at a time." }, { status: 400 });
+  if (files.reduce((total, file) => total + file.size, 0) > MAX_REQUEST_IMAGE_BYTES) {
+    return NextResponse.json({ error: "Upload event photos one at a time. Each image can be up to 4 MB." }, { status: 413 });
   }
-  if (!await matchesImageType(file)) {
-    return NextResponse.json({ error: "That file does not match its image type. Choose a valid JPG, PNG, or WebP image." }, { status: 400 });
+  if (files.some((file) => file.size <= 0 || file.size > MAX_BANNER_BYTES)) {
+    return NextResponse.json({ error: "Each event image must be smaller than 4 MB." }, { status: 400 });
+  }
+  if (!(await Promise.all(files.map(matchesImageType))).every(Boolean)) {
+    return NextResponse.json({ error: "An image does not match its file type. Choose valid JPG, PNG, or WebP images." }, { status: 400 });
+  }
+
+  const eventId = formData.get("eventId");
+  if (typeof eventId === "string" && eventId) {
+    const event = await prisma.event.findUnique({ where: { id: eventId }, select: { createdById: true, isHidden: true } });
+    if (!event || event.isHidden) return NextResponse.json({ error: "Event not found." }, { status: 404 });
+    if (event.createdById !== session.user.id && session.user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Only the event organiser or an administrator can add event photos." }, { status: 403 });
+    }
   }
 
   try {
-    const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
-    const blob = await put(`event-banners/${crypto.randomUUID()}.${extension}`, file, {
-      access: "public",
-      addRandomSuffix: false,
-      contentType: file.type,
-    });
-    return NextResponse.json({ url: blob.url });
+    const urls = await Promise.all(files.map(async (file) => {
+      const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
+      const blob = await put(`event-images/${crypto.randomUUID()}.${extension}`, file, {
+        access: "public",
+        addRandomSuffix: false,
+        contentType: file.type,
+      });
+      return blob.url;
+    }));
+    return NextResponse.json(banner && typeof banner !== "string" ? { url: urls[0] } : { urls });
   } catch (error) {
     console.error("Event banner upload failed:", error);
     return NextResponse.json({ error: "We could not upload that banner. Please try again." }, { status: 502 });

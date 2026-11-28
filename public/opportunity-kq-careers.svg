@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" fill="none">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071626"/><stop offset=".58" stop-color="#123b61"/><stop offset="1" stop-color="#c8102e"/></linearGradient>
+    <linearGradient id="wing" x1=".1" y1=".2" x2=".9" y2=".8"><stop stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity=".02"/></linearGradient>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h1200v420H0z"/>
+  <circle cx="1000" cy="72" r="210" fill="#fff" opacity=".04"/>
+  <path d="M-40 360 530 100l-192 210 862-196-378 180 447-92-503 218H-40Z" fill="url(#wing)"/>
+  <path d="M52 328c250-138 442-156 696-80" stroke="#fff" stroke-opacity=".24" stroke-width="2" stroke-dasharray="8 12"/>
+  <rect x="72" y="68" width="62" height="62" rx="18" fill="#c8102e"/>
+  <text x="103" y="110" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-weight="700" font-size="28">KQ</text>
+  <text x="160" y="98" fill="#fff" font-family="Arial,sans-serif" font-size="17" font-weight="700" letter-spacing="2">KENYA AIRWAYS CAREERS</text>
+  <text x="72" y="230" fill="#fff" font-family="Arial,sans-serif" font-size="54" font-weight="700">A career that takes you further</text>
+  <text x="76" y="276" fill="#e8f1fa" font-family="Arial,sans-serif" font-size="23">Explore opportunities across the aviation industry</text>
+  <rect x="76" y="318" width="190" height="5" rx="2.5" fill="#c8102e"/>
+</svg>

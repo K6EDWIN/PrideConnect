@@ -50,20 +50,18 @@ function toOpportunity(job, divisions, locations) {
   const division = divisions.get(job.division) || "";
   const location = locations.get(job.location) || "";
   const employmentType = typeof job.employmentType === "string" ? job.employmentType : "";
-  const sections = [
-    plainText(job.description),
-    job.responsibilities && `Responsibilities\n${plainText(job.responsibilities)}`,
-    job.skills && `Skills and experience\n${plainText(job.skills)}`,
-    job.qualifications && `Qualifications\n${plainText(job.qualifications)}`,
-    job.howToApply && `How to apply\n${plainText(job.howToApply)}`,
-  ].filter(Boolean);
-  const details = [location, employmentType, job.numberOfPositions ? `${job.numberOfPositions} position${job.numberOfPositions === 1 ? "" : "s"}` : ""].filter(Boolean);
-  const description = [sections.join("\n\n"), details.length ? `\n\n${details.join(" · ")}` : ""].join("").slice(0, 12000);
   const sourceUrl = `${CAREERS_BASE}/anonymous/listing/${encodeURIComponent(job.id)}/details?division=${encodeURIComponent(job.division || "")}`;
   return {
     id: `kq-${job.id}`,
     title: String(job.title).slice(0, 180),
-    description,
+    description: plainText(job.description).slice(0, 12000),
+    responsibilities: plainText(job.responsibilities),
+    skills: plainText(job.skills),
+    qualifications: plainText(job.qualifications),
+    howToApply: plainText(job.howToApply),
+    location,
+    companyName: "Kenya Airways",
+    numberOfPositions: job.numberOfPositions || null,
     type: /intern|graduate trainee|cadet/i.test(`${job.title} ${employmentType}`) ? "Internship" : "Career Opening",
     sourceUrl,
     expiresAt: expiresAt.toISOString(),
@@ -74,7 +72,7 @@ function toOpportunity(job, divisions, locations) {
   };
 }
 
-export async function GET() {
+export async function GET(request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -116,6 +114,13 @@ export async function GET() {
         .map((job) => [job.id, job]),
     ).values()];
     const opportunities = jobs.map((job) => toOpportunity(job, divisions, locations)).filter(Boolean);
+    const requestedId = new URL(request.url).searchParams.get("id");
+    if (requestedId) {
+      const opportunity = opportunities.find((item) => item.id === requestedId);
+      return opportunity
+        ? NextResponse.json({ opportunity })
+        : NextResponse.json({ error: "This Kenya Airways Careers listing is no longer available." }, { status: 404 });
+    }
     return NextResponse.json({ opportunities, source: "Kenya Airways Careers", refreshedAt: new Date().toISOString(), pagesFetched: pageCount, feedTruncated });
   } catch (error) {
     console.error("Kenya Airways Careers feed could not be refreshed:", error);

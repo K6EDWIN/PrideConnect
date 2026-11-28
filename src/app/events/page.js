@@ -1,22 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import KQAppShell from "@/components/KQAppShell";
 import { Button, Tag } from "@/components/KQBrand";
 import { Icon } from "@/components/KQIcons";
 import ReportButton from "@/components/ReportButton";
 import { readApiResponse } from "@/lib/read-api-response";
 
+function EventsLoading() {
+  return <KQAppShell><div className="app-page"><div className="card p-10 text-center text-slate-600">Loading events…</div></div></KQAppShell>;
+}
+
 export default function EventsPage() {
+  return <Suspense fallback={<EventsLoading />}><EventsContent /></Suspense>;
+}
+
+function EventsContent() {
   const { status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sharedEventId = searchParams.get("eventId") || "";
 
   const [events, setEvents] = useState([]);
   const [eventsTotal, setEventsTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => Math.max(1, Number.parseInt(searchParams.get("page") || "1", 10) || 1));
   const [totalPages, setTotalPages] = useState(1);
   const [eventsReloadKey, setEventsReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -27,6 +38,7 @@ export default function EventsPage() {
     location: "",
     eventDate: "",
     bannerUrl: "",
+    photoUrls: [],
   });
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState("");
@@ -36,10 +48,17 @@ export default function EventsPage() {
   const [bannerUploading, setBannerUploading] = useState(false);
   const [bannerError, setBannerError] = useState("");
   const [bannerName, setBannerName] = useState("");
+  const [editingEventId, setEditingEventId] = useState("");
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const [photoNames, setPhotoNames] = useState([]);
+  const [shareEvent, setShareEvent] = useState(null);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [shareError, setShareError] = useState("");
   const [highlightedEventId, setHighlightedEventId] = useState("");
-  const [search, setSearch] = useState("");
-  const [timeFilter, setTimeFilter] = useState("upcoming");
-  const [formatFilter, setFormatFilter] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("q") || "");
+  const [timeFilter, setTimeFilter] = useState(() => searchParams.get("time") || (searchParams.has("eventId") ? "all" : "upcoming"));
+  const [formatFilter, setFormatFilter] = useState(() => searchParams.get("format") || "");
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -54,6 +73,7 @@ export default function EventsPage() {
     const timer = setTimeout(async () => {
       try {
         const params = new URLSearchParams({ q: search, time: timeFilter, format: formatFilter, page: String(page) });
+        if (sharedEventId) params.set("eventId", sharedEventId);
         const res = await fetch(`/api/events?${params}`, { signal: controller.signal });
         const data = await readApiResponse(res, "Could not load events");
 
@@ -69,7 +89,16 @@ export default function EventsPage() {
       }
     }, search ? 220 : 0);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [status, search, timeFilter, formatFilter, page, eventsReloadKey]);
+  }, [status, search, timeFilter, formatFilter, page, eventsReloadKey, sharedEventId]);
+
+  const eventReturnTo = (() => {
+    const params = new URLSearchParams();
+    if (search) params.set("q", search);
+    if (timeFilter !== "upcoming") params.set("time", timeFilter);
+    if (formatFilter) params.set("format", formatFilter);
+    if (page > 1) params.set("page", String(page));
+    return `/events${params.size ? `?${params}` : ""}`;
+  })();
 
   useEffect(() => {
     if (!events.length || typeof window === "undefined") return;
@@ -82,6 +111,13 @@ export default function EventsPage() {
       window.clearTimeout(scrollTimer);
     };
   }, [events]);
+
+  useEffect(() => {
+    if (!shareEvent) return undefined;
+    const closeOnEscape = (event) => { if (event.key === "Escape") setShareEvent(null); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [shareEvent]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -97,6 +133,7 @@ export default function EventsPage() {
     try {
       const formData = new FormData();
       formData.append("banner", file);
+      if (editingEventId) formData.append("eventId", editingEventId);
       const response = await fetch("/api/events/banner", { method: "POST", body: formData });
       const data = await readApiResponse(response, "Could not upload event banner");
       setForm((current) => ({ ...current, bannerUrl: data.url }));
@@ -109,6 +146,81 @@ export default function EventsPage() {
     }
   };
 
+  const handlePhotoGalleryChange = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    if (form.photoUrls.length + files.length > 8) {
+      setPhotoError("An event can have up to eight gallery photos.");
+      e.target.value = "";
+      return;
+    }
+    setPhotoError("");
+    setPhotoUploading(true);
+    try {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append("photos", file);
+        if (editingEventId) formData.append("eventId", editingEventId);
+        const response = await fetch("/api/events/banner", { method: "POST", body: formData });
+        const data = await readApiResponse(response, "Could not upload event photos");
+        if (!Array.isArray(data.urls) || data.urls.length !== 1) throw new Error(`Could not upload ${file.name}.`);
+        setForm((current) => ({ ...current, photoUrls: [...current.photoUrls, data.urls[0]] }));
+        setPhotoNames((current) => [...current, file.name]);
+      }
+      e.target.value = "";
+    } catch (err) {
+      setPhotoError(err.message);
+      e.target.value = "";
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const beginEdit = (event) => {
+    const localDate = new Date(event.eventDate);
+    localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
+    setEditingEventId(event.id);
+    setForm({
+      title: event.title || "",
+      description: event.description || "",
+      location: event.location || "",
+      eventDate: localDate.toISOString().slice(0, 16),
+      bannerUrl: event.bannerUrl || "",
+      photoUrls: event.photoUrls || [],
+    });
+    setPhotoNames([]);
+    setPostError("");
+    setPostNotice("");
+    document.getElementById("event-post")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const cancelEdit = () => {
+    setEditingEventId("");
+    setForm({ title: "", description: "", location: "", eventDate: "", bannerUrl: "", photoUrls: [] });
+    setBannerName("");
+    setPhotoNames([]);
+    setPostError("");
+    setPostNotice("");
+  };
+
+  const shareEventLink = async (event, copyOnly = false) => {
+    const url = new URL(`/events/${encodeURIComponent(event.id)}`, window.location.origin);
+    try {
+      if (!copyOnly && navigator.share) {
+        await navigator.share({ title: event.title, text: event.description || "Join this PrideConnect event.", url: url.toString() });
+        return;
+      }
+      await navigator.clipboard.writeText(url.toString());
+      setShareCopied(true);
+      setShareError("");
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        setShareCopied(false);
+        setShareError("Copy didn’t work here. Select the link and copy it manually.");
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setPosting(true);
@@ -116,8 +228,8 @@ export default function EventsPage() {
     setPostNotice("");
 
     try {
-      const res = await fetch("/api/events", {
-        method: "POST",
+      const res = await fetch(editingEventId ? `/api/events/${editingEventId}` : "/api/events", {
+        method: editingEventId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
@@ -130,9 +242,11 @@ export default function EventsPage() {
       setFormatFilter("");
       setPage(1);
       setEventsReloadKey((key) => key + 1);
-      setForm({ title: "", description: "", location: "", eventDate: "", bannerUrl: "" });
+      setForm({ title: "", description: "", location: "", eventDate: "", bannerUrl: "", photoUrls: [] });
       setBannerName("");
-      setPostNotice("Event published. Member email announcements are being sent in the background.");
+      setPhotoNames([]);
+      setEditingEventId("");
+      setPostNotice(editingEventId ? "Event changes saved." : "Event published. Member email announcements are being sent in the background.");
     } catch (err) {
       setPosting(false);
       setPostError(err.message);
@@ -224,8 +338,8 @@ export default function EventsPage() {
                   <Icon name="events" size={16} />
                 </span>
                 <div>
-                  <h2 className="font-bold text-slate-900 text-sm">Create an Event</h2>
-                  <p className="text-slate-500 text-xs">Host an aviation seminar or reunion</p>
+                  <h2 className="font-bold text-slate-900 text-sm">{editingEventId ? "Edit Event" : "Create an Event"}</h2>
+                  <p className="text-slate-500 text-xs">{editingEventId ? "Update the details, banner, or photo gallery" : "Host an aviation seminar or reunion"}</p>
                 </div>
               </div>
 
@@ -299,6 +413,22 @@ export default function EventsPage() {
                   {bannerName && <p role="status" className="mt-2 text-xs text-emerald-700">Banner ready: {bannerName}</p>}
                   {bannerError && <p role="alert" className="mt-2 text-xs text-red-700">{bannerError}</p>}
                   {form.bannerUrl && <Image src={form.bannerUrl} alt="Preview of event banner" width={1280} height={640} unoptimized className="mt-3 max-h-40 w-full rounded-lg border border-slate-200 object-cover" />}
+                  {form.bannerUrl && editingEventId && <button type="button" onClick={() => { setForm((current) => ({ ...current, bannerUrl: "" })); setBannerName(""); }} className="mt-2 text-xs font-semibold text-red-700 hover:underline">Remove current banner</button>}
+                </div>
+
+                <div>
+                  <label htmlFor="event-gallery" className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">Additional event photos <span className="font-normal normal-case text-slate-500">(optional, up to 8)</span></label>
+                  <input id="event-gallery" type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={handlePhotoGalleryChange} disabled={photoUploading || posting || form.photoUrls.length >= 8} className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-semibold file:text-slate-700 hover:file:bg-slate-200" aria-describedby="event-gallery-help" />
+                  <p id="event-gallery-help" className="mt-1 text-xs text-slate-500">Add a few moments, speakers, or venue photos. JPG, PNG, or WebP, up to 4 MB each.</p>
+                  {photoUploading && <p role="status" className="mt-2 text-xs text-slate-600">Uploading event photos…</p>}
+                  {photoError && <p role="alert" className="mt-2 text-xs text-red-700">{photoError}</p>}
+                  {!!photoNames.length && <p role="status" className="mt-2 text-xs text-emerald-700">Uploaded: {photoNames.join(", ")}</p>}
+                  {!!form.photoUrls.length && <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {form.photoUrls.map((url, index) => <div key={`${url}-${index}`} className="relative">
+                      <Image src={url} alt={`Event photo ${index + 1}`} width={480} height={320} unoptimized className="h-24 w-full rounded-lg border border-slate-200 object-cover" />
+                      <button type="button" onClick={() => setForm((current) => ({ ...current, photoUrls: current.photoUrls.filter((_, photoIndex) => photoIndex !== index) }))} className="absolute right-1 top-1 rounded-full bg-slate-950/80 px-2 py-1 text-xs font-bold text-white" aria-label={`Remove event photo ${index + 1}`}>×</button>
+                    </div>)}
+                  </div>}
                 </div>
 
                 {postError && (
@@ -310,12 +440,13 @@ export default function EventsPage() {
 
                 <Button
                   type="submit"
-                  disabled={posting || bannerUploading}
+                  disabled={posting || bannerUploading || photoUploading}
                   className="w-full"
                   icon="arrow"
                 >
-                  {posting ? "Scheduling..." : "Schedule Event"}
+                  {posting ? (editingEventId ? "Saving changes…" : "Scheduling…") : (editingEventId ? "Save Event Changes" : "Schedule Event")}
                 </Button>
+                {editingEventId && <Button type="button" variant="secondary" className="w-full" onClick={cancelEdit}>Cancel editing</Button>}
               </div>
             </form>
           </section>
@@ -366,10 +497,15 @@ export default function EventsPage() {
                       id={`event-${e.id}`}
                       className={`card overflow-hidden p-5 transition ${highlightedEventId === e.id ? "border-[#c8102e] ring-2 ring-[#c8102e]/20" : "hover:border-slate-300"}`}
                     >
-                      {e.bannerUrl && <Image src={e.bannerUrl} alt={`${e.title} banner`} width={1280} height={640} unoptimized className="-mx-5 -mt-5 mb-4 max-h-72 w-[calc(100%+2.5rem)] object-cover" />}
+                <Link href={`/events/${encodeURIComponent(e.id)}?returnTo=${encodeURIComponent(eventReturnTo)}`} className="-mx-5 -mt-5 mb-4 block aspect-[1200/420] overflow-hidden bg-slate-900" aria-label={`View details for ${e.title}`}>
+                        <Image src={e.bannerUrl || e.photoUrls?.[0] || "/community-post.svg"} alt={`${e.title} event cover`} width={1200} height={420} unoptimized className="h-full w-full object-cover transition duration-300 hover:scale-[1.02]" />
+                      </Link>
+                      {!!e.photoUrls?.length && <div className="-mx-1 mb-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                        {e.photoUrls.filter((url) => url !== (e.bannerUrl || e.photoUrls?.[0])).map((url, index) => <Image key={`${url}-${index}`} src={url} alt={`${e.title}, event photo ${index + 1}`} width={480} height={320} unoptimized className="h-20 w-full rounded-lg object-cover sm:h-24" />)}
+                      </div>}
                       <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
                         <div className="min-w-0 flex-1">
-                          <h3 className="font-bold text-base text-slate-900">{e.title}</h3>
+                          <h3 className="font-bold text-base text-slate-900"><Link href={`/events/${encodeURIComponent(e.id)}?returnTo=${encodeURIComponent(eventReturnTo)}`} className="hover:text-[#a30d25]">{e.title}</Link></h3>
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 mt-1">
                             <span className="flex items-center gap-1">
                               <Icon name="calendar" size={12} />
@@ -411,7 +547,11 @@ export default function EventsPage() {
                             ? "Cancel RSVP"
                             : "RSVP to Attend"}
                         </Button>
-                        <a href={`/events?eventId=${encodeURIComponent(e.id)}`} className="rounded-lg border border-slate-300 px-3 py-2 text-center font-semibold text-slate-700 hover:bg-slate-50">Event link</a>
+                        <Link href={`/events/${encodeURIComponent(e.id)}?returnTo=${encodeURIComponent(eventReturnTo)}`} className="rounded-lg bg-[#c8102e] px-3 py-2 text-center font-semibold text-white hover:bg-[#a30d25]">View details</Link>
+                        <button type="button" onClick={() => { setShareEvent(e); setShareCopied(false); setShareError(""); }} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-center font-semibold text-slate-700 hover:border-[#c8102e]/40 hover:bg-red-50 hover:text-[#a30d25]">
+                          <Icon name="link" size={15} /> Share link
+                        </button>
+                        {e.canManage && <button type="button" onClick={() => beginEdit(e)} className="rounded-lg border border-slate-300 px-3 py-2 text-center font-semibold text-slate-700 hover:bg-slate-50">Edit event</button>}
                       </div>
                       <ReportButton targetType="EVENT" targetId={e.id} />
                     </article>
@@ -426,6 +566,26 @@ export default function EventsPage() {
           </section>
         </div>
       </div>
+      {shareEvent && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setShareEvent(null); }}>
+        <section role="dialog" aria-modal="true" aria-labelledby="share-event-title" className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+            <div><p className="text-xs font-bold uppercase tracking-wider text-[#c8102e]">Share with your network</p><h2 id="share-event-title" className="mt-1 text-lg font-bold text-slate-900">Share this event</h2></div>
+            <button type="button" onClick={() => setShareEvent(null)} className="grid h-9 w-9 place-items-center rounded-full text-slate-500 hover:bg-slate-100" aria-label="Close share dialog"><Icon name="close" size={18} /></button>
+          </div>
+          <div className="p-5">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+              {shareEvent.bannerUrl || shareEvent.photoUrls?.[0]
+                ? <Image src={shareEvent.bannerUrl || shareEvent.photoUrls[0]} alt={`${shareEvent.title} event image`} width={960} height={400} unoptimized className="h-44 w-full object-cover" />
+                : <Image src="/community-post.svg" alt="Community event" width={960} height={400} unoptimized className="h-44 w-full object-cover" />}
+              <div className="p-4"><h3 className="font-bold text-slate-900">{shareEvent.title}</h3><p className="mt-1 line-clamp-2 text-sm text-slate-600">{shareEvent.description}</p><p className="mt-3 text-xs font-medium text-slate-500">{new Date(shareEvent.eventDate).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} · {shareEvent.location || "Location to be announced"}</p></div>
+            </div>
+            <label htmlFor="share-event-url" className="mt-5 block text-xs font-semibold text-slate-700">Event link</label>
+            <div className="mt-1 flex gap-2"><input id="share-event-url" readOnly value={typeof window !== "undefined" ? `${window.location.origin}/events/${encodeURIComponent(shareEvent.id)}` : ""} onFocus={(event) => event.currentTarget.select()} className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-700" /><button type="button" onClick={() => shareEventLink(shareEvent, true)} className="shrink-0 rounded-lg bg-[#c8102e] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#a30d25]">{shareCopied ? "Copied" : "Copy link"}</button></div>
+            {shareError && <p role="alert" className="mt-2 text-xs text-amber-800">{shareError}</p>}
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setShareEvent(null)} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Done</button><button type="button" onClick={() => shareEventLink(shareEvent)} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Share…</button></div>
+          </div>
+        </section>
+      </div>}
     </KQAppShell>
   );
 }

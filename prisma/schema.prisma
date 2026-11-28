@@ -369,6 +369,7 @@ model Event {
   description String?
   location    String?
   bannerUrl   String?
+  photoUrls   String[] @default([])
   eventDate   DateTime
   isHidden    Boolean  @default(false)
   createdAt   DateTime @default(now())

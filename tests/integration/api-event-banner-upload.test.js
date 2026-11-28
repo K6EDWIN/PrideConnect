@@ -43,7 +43,7 @@ describe("POST /api/events/banner", () => {
     consumeRateLimit.mockResolvedValueOnce({ allowed: false, retryAfter: 120 });
     const response = await POST(uploadRequest(new File(["not-used"], "banner.png", { type: "image/png" })));
     expect(response.status).toBe(429);
-    expect(consumeRateLimit).toHaveBeenCalledWith(expect.objectContaining({ scope: "event-banner-user", identity: "member-1", limit: 8 }));
+    expect(consumeRateLimit).toHaveBeenCalledWith(expect.objectContaining({ scope: "event-banner-user", identity: "member-1", limit: 16 }));
     expect(put).not.toHaveBeenCalled();
   });
 
@@ -58,6 +58,6 @@ describe("POST /api/events/banner", () => {
     const response = await POST(uploadRequest(new File([signature], "banner.png", { type: "image/png" })));
     expect(response.status).toBe(200);
     expect((await response.json()).url).toMatch(/public\.blob\.vercel-storage\.com/);
-    expect(put).toHaveBeenCalledWith(expect.stringMatching(/^event-banners\//), expect.any(File), expect.objectContaining({ access: "public", contentType: "image/png" }));
+    expect(put).toHaveBeenCalledWith(expect.stringMatching(/^event-images\//), expect.any(File), expect.objectContaining({ access: "public", contentType: "image/png" }));
   });
 });
