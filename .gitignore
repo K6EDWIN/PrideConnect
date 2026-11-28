@@ -18,6 +18,9 @@
 # production
 /build
 
+# Local presentation notes
+/docs/CODE_WALKTHROUGH.md
+
 # misc
 .DS_Store
 *.pem

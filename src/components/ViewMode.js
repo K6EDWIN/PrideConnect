@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useLayoutEffect, useSyncExternalStore } from "react";
+import { createContext, useContext, useLayoutEffect, useSyncExternalStore } from "react";
 
 const ViewModeContext = createContext({ mode: "classic", toggle: () => {} });
 const STORAGE_KEY = "prideconnect-view-mode";
@@ -33,37 +33,6 @@ export function ViewModeProvider({ children }) {
 
   useLayoutEffect(() => {
     document.documentElement.dataset.viewMode = mode;
-  }, [mode]);
-
-  useEffect(() => {
-    if (mode !== "modern") return undefined;
-
-    const root = document.documentElement;
-    let frame = 0;
-    const updatePointer = (event) => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        root.style.setProperty("--glow-x", `${(event.clientX / window.innerWidth) * 100}%`);
-        root.style.setProperty("--glow-y", `${(event.clientY / window.innerHeight) * 100}%`);
-      });
-    };
-    const updateScroll = () => {
-      const range = document.documentElement.scrollHeight - window.innerHeight;
-      const progress = range > 0 ? window.scrollY / range : 0;
-      root.style.setProperty("--modern-hue", `${350 - progress * 265}`);
-    };
-
-    window.addEventListener("pointermove", updatePointer, { passive: true });
-    window.addEventListener("scroll", updateScroll, { passive: true });
-    updateScroll();
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("pointermove", updatePointer);
-      window.removeEventListener("scroll", updateScroll);
-      root.style.removeProperty("--glow-x");
-      root.style.removeProperty("--glow-y");
-      root.style.removeProperty("--modern-hue");
-    };
   }, [mode]);
 
   return (
