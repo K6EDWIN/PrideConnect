@@ -129,15 +129,21 @@ describe("/api/connection-requests API Endpoints", () => {
       expect(data.error).toBe("Recipient not found");
     });
 
-    it("returns 409 if a pending request already exists", async () => {
+    it("returns the existing pending request without creating a duplicate", async () => {
       getServerSession.mockResolvedValueOnce({
         user: { id: "user-me" },
       });
       prisma.user.findUnique.mockResolvedValueOnce({ id: "user-target" });
-      prisma.connectionRequest.findFirst.mockResolvedValueOnce({
+      const existing = {
         id: "existing-req",
+        senderId: "user-me",
+        receiverId: "user-target",
         status: "PENDING",
-      });
+      };
+      prisma.connectionRequest.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existing);
 
       const req = new Request("http://localhost:3000/api/connection-requests", {
         method: "POST",
@@ -146,8 +152,9 @@ describe("/api/connection-requests API Endpoints", () => {
       const res = await POST(req);
       const data = await res.json();
 
-      expect(res.status).toBe(409);
-      expect(data.error).toBe("You already have a pending connection request to this person");
+      expect(res.status).toBe(200);
+      expect(data).toEqual({ connectionRequest: existing, requestPending: true });
+      expect(prisma.connectionRequest.create).not.toHaveBeenCalled();
     });
 
     it("creates and returns the connection request with status 201 on success", async () => {

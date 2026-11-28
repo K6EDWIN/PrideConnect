@@ -29,32 +29,55 @@ export async function GET(request) {
   if (!["OPEN", "ACTIONED", "DISMISSED", "ALL"].includes(status)) {
     return NextResponse.json({ error: "Invalid report status" }, { status: 400 });
   }
+  const requestedPage = Number.parseInt(searchParams.get("page") || "1", 10);
+  const page = Number.isFinite(requestedPage) ? Math.max(1, requestedPage) : 1;
+  const pageSize = Math.min(50, Math.max(10, Number.parseInt(searchParams.get("pageSize") || "25", 10) || 25));
+  const query = searchParams.get("q")?.trim().slice(0, 120) || "";
+  const filters = [];
+  if (status !== "ALL") filters.push({ status });
+  if (query) {
+    filters.push({ OR: [
+      { reason: { contains: query, mode: "insensitive" } },
+      { description: { contains: query, mode: "insensitive" } },
+      { moderatorNote: { contains: query, mode: "insensitive" } },
+      { targetId: { contains: query, mode: "insensitive" } },
+      { reporter: { email: { contains: query, mode: "insensitive" } } },
+      { reporter: { profile: { is: { fullName: { contains: query, mode: "insensitive" } } } } },
+    ] });
+  }
+  const where = filters.length ? { AND: filters } : {};
   try {
-    const reports = await prisma.report.findMany({
-      where: status === "ALL" ? {} : { status },
-      include: {
-        reporter: { select: { id: true, isDeleted: true, profile: { select: { fullName: true } } } },
-        moderator: { select: { id: true, profile: { select: { fullName: true } } } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
-    const reportsWithTargets = await Promise.all(reports.map(async (report) => {
-      let target = null;
-      if (report.targetType === "USER") {
-        const user = await prisma.user.findUnique({
-          where: { id: report.targetId },
-          select: { isDeleted: true, profile: { select: { fullName: true } } },
-        });
-        target = user?.isDeleted ? "Deleted member" : user?.profile?.fullName || null;
-      } else if (report.targetType === "OPPORTUNITY") {
-        target = (await prisma.opportunity.findUnique({ where: { id: report.targetId }, select: { title: true } }))?.title || null;
-      } else {
-        target = (await prisma.event.findUnique({ where: { id: report.targetId }, select: { title: true } }))?.title || null;
-      }
-      return { ...report, targetLabel: target };
+    const [reports, total] = await Promise.all([
+      prisma.report.findMany({
+        where,
+        include: {
+          reporter: { select: { id: true, isDeleted: true, profile: { select: { fullName: true } } } },
+          moderator: { select: { id: true, profile: { select: { fullName: true } } } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.report.count({ where }),
+    ]);
+    const idsByType = Object.fromEntries(["USER", "OPPORTUNITY", "EVENT"].map((type) => [
+      type, [...new Set(reports.filter((report) => report.targetType === type).map((report) => report.targetId))],
+    ]));
+    const [users, opportunities, events] = await Promise.all([
+      idsByType.USER.length ? prisma.user.findMany({ where: { id: { in: idsByType.USER } }, select: { id: true, isDeleted: true, profile: { select: { fullName: true } } } }) : [],
+      idsByType.OPPORTUNITY.length ? prisma.opportunity.findMany({ where: { id: { in: idsByType.OPPORTUNITY } }, select: { id: true, title: true } }) : [],
+      idsByType.EVENT.length ? prisma.event.findMany({ where: { id: { in: idsByType.EVENT } }, select: { id: true, title: true } }) : [],
+    ]);
+    const targetsByType = {
+      USER: new Map(users.map((user) => [user.id, user.isDeleted ? "Deleted member" : user.profile?.fullName || null])),
+      OPPORTUNITY: new Map(opportunities.map((item) => [item.id, item.title])),
+      EVENT: new Map(events.map((item) => [item.id, item.title])),
+    };
+    const reportsWithTargets = reports.map((report) => ({
+      ...report,
+      targetLabel: targetsByType[report.targetType].get(report.targetId) || null,
     }));
-    return NextResponse.json({ reports: reportsWithTargets });
+    return NextResponse.json({ reports: reportsWithTargets, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
   } catch (error) {
     return reportsFailure(error);
   }

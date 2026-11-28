@@ -68,17 +68,63 @@ export async function POST(request) {
     return NextResponse.json({ error: "Administrator accounts do not join the member connection network" }, { status: 403 });
   }
 
-  const [receiver, senderProfile, acceptedMentorships, acceptedConnections] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: receiverId },
-      include: {
-        profile: {
-          include: { skills: { include: { skill: true } }, interests: { include: { interest: true } } },
-        },
-      },
-    }),
+  const receiver = await prisma.user.findUnique({
+    where: { id: receiverId },
+    select: {
+      id: true,
+      role: true,
+      isDemo: true,
+      isDeleted: true,
+      profile: { select: { fullName: true } },
+    },
+  });
+  if (!receiver) {
+    return NextResponse.json({ error: "Recipient not found" }, { status: 404 });
+  }
+  if (receiver.isDemo || receiver.isDeleted || receiver.role === "ADMIN") {
+    return NextResponse.json({ error: "Administrator accounts are not available for member matching" }, { status: 403 });
+  }
+
+  const acceptedRequest = await prisma.connectionRequest.findFirst({
+    where: {
+      OR: [
+        { senderId: session.user.id, receiverId },
+        { senderId: receiverId, receiverId: session.user.id },
+      ],
+      status: "ACCEPTED",
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (acceptedRequest) {
+    return NextResponse.json({ connectionRequest: acceptedRequest, alreadyConnected: true });
+  }
+
+  const incomingRequest = await prisma.connectionRequest.findFirst({
+    where: { senderId: receiverId, receiverId: session.user.id, status: "PENDING" },
+    orderBy: { createdAt: "desc" },
+  });
+  if (incomingRequest) {
+    return NextResponse.json(
+      { error: "This member has already sent you a request. Review it in Network Requests.", incomingRequest: true, requestId: incomingRequest.id },
+      { status: 409 }
+    );
+  }
+
+  const existingRequest = await prisma.connectionRequest.findFirst({
+    where: { senderId: session.user.id, receiverId, status: "PENDING" },
+    orderBy: { createdAt: "desc" },
+  });
+  if (existingRequest) {
+    return NextResponse.json({ connectionRequest: existingRequest, requestPending: true });
+  }
+
+  const [senderProfile, receiverProfile, acceptedMentorships, acceptedConnections] = await Promise.all([
     prisma.profile.findUnique({
       where: { userId: session.user.id },
+      include: { skills: { include: { skill: true } }, interests: { include: { interest: true } } },
+    }),
+    prisma.profile.findUnique({
+      where: { userId: receiverId },
       include: { skills: { include: { skill: true } }, interests: { include: { interest: true } } },
     }),
     prisma.mentorshipRequest.findMany({
@@ -90,31 +136,15 @@ export async function POST(request) {
       select: { senderId: true, receiverId: true },
     }),
   ]);
-  if (!receiver) {
-    return NextResponse.json({ error: "Recipient not found" }, { status: 404 });
-  }
-  if (receiver.isDemo || receiver.isDeleted || receiver.role === "ADMIN") {
-    return NextResponse.json({ error: "Administrator accounts are not available for member matching" }, { status: 403 });
-  }
-
-  const existing = await prisma.connectionRequest.findFirst({
-    where: { senderId: session.user.id, receiverId, status: "PENDING" },
-  });
-  if (existing) {
-    return NextResponse.json(
-      { error: "You already have a pending connection request to this person" },
-      { status: 409 }
-    );
-  }
 
   const connectionRequest = await prisma.connectionRequest.create({
     data: {
       senderId: session.user.id,
       receiverId,
-      modelFeatures: senderProfile && receiver.profile
+      modelFeatures: senderProfile && receiverProfile
         ? extractPairFeatures(
             senderProfile,
-            receiver.profile,
+            receiverProfile,
             "CONNECTION",
             computeCollaborativeScore(
               buildConnectionsByUser([...acceptedMentorships, ...acceptedConnections]),

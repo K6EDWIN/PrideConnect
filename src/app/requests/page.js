@@ -325,7 +325,7 @@ export default function RequestsPage() {
                 <Icon name="check" size={28} className="mx-auto text-emerald-600" />
                 <h3 className="font-bold text-slate-800 text-base">You are all caught up!</h3>
                 <p className="text-sm text-slate-500 max-w-sm mx-auto">
-                  No incoming mentorship requests pending your review at this time.
+                  No incoming connection or mentorship requests are waiting for your response.
                 </p>
               </div>
             ) : (

@@ -869,15 +869,7 @@ html[data-view-mode="modern"] .home-page>main>section:first-child>div>div:last-c
   }
 }
 
-/* Modern is a separate, immersive visual system inspired by the supplied
-   Dogstudio-style reference: deep ink, oversized editorial type, glass panels,
-   and a color field that responds to pointer and scroll position. */
-@property --modern-hue {
-  syntax: "<number>";
-  inherits: true;
-  initial-value: 350;
-}
-
+/* Modern uses the same stable crimson accent throughout the page. */
 html[data-view-mode="modern"] {
   --modern-hue: 350;
   --modern-ink: #090a0f;
@@ -887,7 +879,6 @@ html[data-view-mode="modern"] {
   --modern-muted: #aaa8b3;
   background: var(--modern-ink);
   color: var(--modern-copy);
-  transition: --modern-hue .8s ease;
 }
 
 html[data-view-mode="modern"] body {
@@ -908,7 +899,6 @@ html[data-view-mode="modern"] body::before {
     radial-gradient(ellipse at var(--glow-x, 76%) var(--glow-y, 22%), hsl(var(--modern-hue) 85% 58% / .17), transparent 34rem),
     radial-gradient(ellipse at 12% 88%, hsl(calc(var(--modern-hue) + 66) 85% 56% / .09), transparent 33rem),
     linear-gradient(145deg, #101017 0%, #090a0f 56%, #0c0b12 100%);
-  transition: background .75s ease;
 }
 
 html[data-view-mode="modern"] body>* {
@@ -1122,9 +1112,9 @@ html[data-view-mode="modern"] .app-page [class*="rounded-lg"] {
 }
 
 html[data-view-mode="modern"] .card:hover {
-  border-color: hsl(var(--modern-hue) 70% 66% / .55);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, .26);
-  transform: translateY(-5px);
+  border-color: hsl(var(--modern-hue) 55% 65% / .4);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .2);
+  transform: none;
 }
 
 html[data-view-mode="modern"] .app-page input,

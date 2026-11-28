@@ -43,6 +43,7 @@ export default function OpportunitiesPage() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
   const [careersRefreshedAt, setCareersRefreshedAt] = useState("");
+  const [careersFeedTruncated, setCareersFeedTruncated] = useState(false);
   const [careersRefreshing, setCareersRefreshing] = useState(false);
   const careersRefreshRef = useRef(null);
 
@@ -82,6 +83,7 @@ export default function OpportunitiesPage() {
           (data.opportunities || []).forEach((item) => merged.set(item.sourceUrl, item));
           setOpportunities([...merged.values()].sort((a, b) => new Date(b.createdAt || b.expiresAt || 0) - new Date(a.createdAt || a.expiresAt || 0)));
           setCareersRefreshedAt(data.refreshedAt ? new Date(data.refreshedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi", hour: "2-digit", minute: "2-digit" }) : "");
+          setCareersFeedTruncated(Boolean(data.feedTruncated));
           setError("");
         }
       } catch (refreshError) {
@@ -191,6 +193,7 @@ export default function OpportunitiesPage() {
               Current Kenya Airways careers listings refresh automatically, alongside community opportunities.
             </p>
             {careersRefreshedAt && <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500"><span>Careers feed checked {careersRefreshedAt}. It refreshes once a minute while this page is open.</span><button type="button" onClick={() => careersRefreshRef.current?.()} disabled={careersRefreshing} className="font-semibold text-[#c8102e] hover:underline disabled:opacity-60">{careersRefreshing ? "Refreshing…" : "Refresh now"}</button></div>}
+            {careersFeedTruncated && <p role="status" className="mt-2 text-xs text-amber-800">The careers service has more active listings than this page currently loads. Showing the first 500; use the official careers link to view the complete list.</p>}
           </div>
           <div className="flex flex-wrap gap-2 sm:justify-end">
             <a href="#opportunity-list" className="rounded-lg bg-[#c8102e] px-4 py-2 text-center text-sm font-semibold text-white hover:bg-[#a90d27]">Explore opportunities</a>
